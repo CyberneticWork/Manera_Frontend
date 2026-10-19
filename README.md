@@ -9,7 +9,7 @@ npm install
 npx expo start --web
 ```
 
-Set `EXPO_PUBLIC_API_URL` in `.env` to the API, for example `http://localhost:4000`. Sign in with the JWT login from the backend.
+Set `EXPO_PUBLIC_API_URL` in `.env` to the API. The hosted build uses `https://apicooppos.cyberneticde.site`. Sign in with the JWT login from the backend.
 
 ## Rebuild the web app
 
