@@ -67,8 +67,21 @@ export async function apiBlob(path) {
   return response.blob();
 }
 
+function sessionToken() {
+  if (Platform.OS !== 'web' || typeof localStorage === 'undefined') return '';
+  try {
+    const raw = localStorage.getItem(KEY);
+    return raw ? JSON.parse(raw).token || '' : '';
+  } catch {
+    return '';
+  }
+}
+
 export function fileUrl(url) {
   if (!url) return '';
-  if (url.startsWith('http')) return url;
-  return `${apiBase()}${url}`;
+  const absolute = url.startsWith('http') ? url : `${apiBase()}${url}`;
+  if (!absolute.includes('/api/media')) return absolute;
+  const token = sessionToken();
+  if (!token || absolute.includes('token=')) return absolute;
+  return `${absolute}${absolute.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`;
 }

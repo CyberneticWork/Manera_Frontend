@@ -10,12 +10,18 @@ export const MENU = [
   { key: 'transfer', title: 'Cash Transfer', hint: 'Manager, main, and petty cash', group: 'Accounts', roles: ['Account'] },
   { key: 'expenses', title: 'Expenses', hint: 'Today petty cash lines', group: 'Accounts', roles: ['Account'] },
   { key: 'users', title: 'Users', hint: 'Create a login', group: 'Utilities', roles: ['SAdmin'] },
+  { key: 'acl', title: 'Access Control', hint: 'Screens each role may open', group: 'Utilities', roles: ['SAdmin'] },
+  { key: 'firebase', title: 'Firebase', hint: 'Photo and document storage', group: 'Utilities', roles: ['SAdmin'] },
   { key: 'approvals', title: 'Job Approvals', hint: 'Approve finalized jobs', group: 'Manager', roles: ['Admin'] },
   { key: 'commission', title: 'Commission', hint: 'Business and rider rates', group: 'Manager', roles: ['Admin'] },
   { key: 'access', title: 'Access Code', hint: 'Unlock reports for a date', group: 'Manager', roles: ['Admin'] },
 ];
 
-export function menuFor(role) {
+export function menuFor(role, permissions) {
   if (role === 'SAdmin') return MENU;
+  if (Array.isArray(permissions)) {
+    const allowed = new Set(permissions);
+    return MENU.filter((item) => allowed.has(item.key));
+  }
   return MENU.filter((item) => item.roles.includes(role));
 }

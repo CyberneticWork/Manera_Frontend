@@ -11,6 +11,7 @@ import { ClientScreen } from './src/screens/ClientScreen';
 import { CashierScreen } from './src/screens/CashierScreen';
 import { HistoryScreen } from './src/screens/HistoryScreen';
 import { AccessScreen, ApprovalsScreen, CommissionScreen } from './src/screens/ManagerScreen';
+import { AclScreen, FirebaseScreen } from './src/screens/SecurityScreen';
 import { ReportsScreen } from './src/screens/ReportsScreen';
 import { MastersScreen, UsersScreen } from './src/screens/MastersScreen';
 import { AccountsScreen, ExpensesScreen, TransferScreen } from './src/screens/AccountsScreen';
@@ -25,13 +26,33 @@ export default function App() {
   const wide = width >= 980;
 
   useEffect(() => {
-    loadSession().then((saved) => {
-      setSession(saved);
+    loadSession().then(async (saved) => {
+      if (saved?.token) {
+        try {
+          const me = await api('/api/auth/me');
+          const next = { ...saved, user: me.user, company: me.company, permissions: me.permissions };
+          await saveSession(next);
+          setSession(next);
+        } catch (error) {
+          if (/session|login|expired|not found/i.test(error.message || '')) {
+            await clearSession();
+            setSession(null);
+          } else {
+            setSession(saved);
+          }
+        }
+      }
       setReady(true);
     });
   }, []);
 
   if (!ready) return <View style={{ flex: 1, backgroundColor: colors.bg }} />;
+
+  const owned = new Set(session ? menuFor(session.user.group, session.permissions).map((item) => item.key) : []);
+  const linked = { clients: ['history', 'cashier', 'approvals'] };
+  const page = !session || screen === 'home' || owned.has(screen) || (linked[screen] || []).some((key) => owned.has(key))
+    ? screen
+    : 'home';
 
   async function logout() {
     await clearSession();
@@ -56,7 +77,7 @@ export default function App() {
             {(wide || menuOpen) ? (
               <Sidebar
                 session={session}
-                current={screen}
+                current={page}
                 overlay={!wide}
                 onOpen={open}
                 onLogout={logout}
@@ -65,29 +86,38 @@ export default function App() {
             {menuOpen && !wide ? <Pressable style={styles.backdrop} onPress={() => setMenuOpen(false)} /> : null}
             <View style={styles.main}>
               {!wide ? (
-                <View style={styles.topBar}>
-                  <Pressable style={styles.menuBtn} onPress={() => setMenuOpen((value) => !value)}>
-                    <Text style={styles.menuBtnText}>{menuOpen ? 'Close' : 'Menu'}</Text>
-                  </Pressable>
-                  <Text style={styles.topTitle}>Gold Store</Text>
-                  <Text style={styles.topUser} numberOfLines={1}>{session.user.username}</Text>
+                <View>
+                  <View style={styles.ribbonBar}>
+                    {[colors.amber, colors.teal, colors.coral, colors.violet, colors.green, colors.rose].map((color) => (
+                      <View key={color} style={[styles.ribbonCell, { backgroundColor: color }]} />
+                    ))}
+                  </View>
+                  <View style={styles.topBar}>
+                    <Pressable style={styles.menuBtn} onPress={() => setMenuOpen((value) => !value)}>
+                      <Text style={styles.menuBtnText}>{menuOpen ? 'Close' : 'Menu'}</Text>
+                    </Pressable>
+                    <Text style={styles.topTitle}>Gold Store</Text>
+                    <Text style={styles.topUser} numberOfLines={1}>{session.user.username}</Text>
+                  </View>
                 </View>
               ) : null}
-              {screen === 'home' ? <Home session={session} onOpen={open} /> : null}
-              {screen === 'calls' ? <CallScreen username={session.user.username} onBack={() => open('home')} /> : null}
-              {screen === 'assign' ? <AssignScreen onBack={() => open('home')} /> : null}
-              {screen === 'clients' ? <ClientScreen docNo={docNo} readOnly={session.user.group === 'History'} onBack={() => open('home')} /> : null}
-              {screen === 'cashier' ? <CashierScreen onBack={() => open('home')} onOpenClient={(id) => open('clients', id)} /> : null}
-              {screen === 'history' ? <HistoryScreen role={session.user.group} onBack={() => open('home')} onOpen={(id) => open('clients', id)} /> : null}
-              {screen === 'masters' ? <MastersScreen onBack={() => open('home')} /> : null}
-              {screen === 'reports' ? <ReportsScreen onBack={() => open('home')} /> : null}
-              {screen === 'accounts' ? <AccountsScreen onBack={() => open('home')} /> : null}
-              {screen === 'transfer' ? <TransferScreen onBack={() => open('home')} /> : null}
-              {screen === 'expenses' ? <ExpensesScreen onBack={() => open('home')} /> : null}
-              {screen === 'users' ? <UsersScreen onBack={() => open('home')} /> : null}
-              {screen === 'approvals' ? <ApprovalsScreen role={session.user.group} onBack={() => open('home')} /> : null}
-              {screen === 'commission' ? <CommissionScreen onBack={() => open('home')} /> : null}
-              {screen === 'access' ? <AccessScreen onBack={() => open('home')} /> : null}
+              {page === 'home' ? <Home session={session} onOpen={open} /> : null}
+              {page === 'calls' ? <CallScreen username={session.user.username} onBack={() => open('home')} /> : null}
+              {page === 'assign' ? <AssignScreen onBack={() => open('home')} /> : null}
+              {page === 'clients' ? <ClientScreen docNo={docNo} readOnly={session.user.group === 'History'} onBack={() => open('home')} /> : null}
+              {page === 'cashier' ? <CashierScreen onBack={() => open('home')} onOpenClient={(id) => open('clients', id)} /> : null}
+              {page === 'history' ? <HistoryScreen role={session.user.group} onBack={() => open('home')} onOpen={(id) => open('clients', id)} /> : null}
+              {page === 'masters' ? <MastersScreen onBack={() => open('home')} /> : null}
+              {page === 'reports' ? <ReportsScreen onBack={() => open('home')} /> : null}
+              {page === 'accounts' ? <AccountsScreen onBack={() => open('home')} /> : null}
+              {page === 'transfer' ? <TransferScreen onBack={() => open('home')} /> : null}
+              {page === 'expenses' ? <ExpensesScreen onBack={() => open('home')} /> : null}
+              {page === 'users' ? <UsersScreen onBack={() => open('home')} /> : null}
+              {page === 'acl' ? <AclScreen onBack={() => open('home')} /> : null}
+              {page === 'firebase' ? <FirebaseScreen onBack={() => open('home')} /> : null}
+              {page === 'approvals' ? <ApprovalsScreen role={session.user.group} onBack={() => open('home')} /> : null}
+              {page === 'commission' ? <CommissionScreen onBack={() => open('home')} /> : null}
+              {page === 'access' ? <AccessScreen onBack={() => open('home')} /> : null}
             </View>
           </View>
         )}
@@ -107,7 +137,7 @@ function Login({ onSuccess }) {
     setError('');
     try {
       const data = await api('/api/auth/login', { method: 'POST', body: { username, password } });
-      const session = { token: data.token, user: data.user, company: data.company };
+      const session = { token: data.token, user: data.user, company: data.company, permissions: data.permissions };
       await saveSession(session);
       onSuccess(session);
     } catch (e) {
@@ -120,9 +150,14 @@ function Login({ onSuccess }) {
   return (
     <View style={styles.loginWrap}>
       <View style={styles.loginCard}>
+        <View style={styles.ribbon}>
+          {[colors.amber, colors.teal, colors.coral, colors.violet, colors.green, colors.rose].map((color) => (
+            <View key={color} style={[styles.ribbonCell, { backgroundColor: color }]} />
+          ))}
+        </View>
         <Text style={styles.eyebrow}>Precious metals</Text>
         <Text style={styles.brand}>Gold Store</Text>
-        <Text style={styles.tag}>Calls, client jobs, cashier payouts, and accounts.</Text>
+        <Text style={styles.tag}>Calls, client jobs, cashier payouts, and accounts. Sign in with your desk login.</Text>
         <Banner text={error} />
         <Field label="Username" value={username} onChangeText={setUsername} />
         <Field label="Password" value={password} onChangeText={setPassword} secureTextEntry />
@@ -147,9 +182,10 @@ function Sidebar({ session, current, onOpen, onLogout, overlay }) {
         </Pressable>
         {groups.map((group) => (
           <View key={group} style={{ marginTop: 18 }}>
-            <Text style={styles.group}>{group}</Text>
+            <Text style={[styles.group, { color: GROUP_COLOR[group] || colors.gold }]}>{group}</Text>
             {items.filter((item) => item.group === group).map((item) => (
-              <Pressable key={item.key} onPress={() => onOpen(item.key)} style={[styles.navItem, current === item.key && styles.navOn]}>
+              <Pressable key={item.key} onPress={() => onOpen(item.key)} style={[styles.navItem, current === item.key && { backgroundColor: GROUP_COLOR[group] || colors.amber }]}>
+                <View style={[styles.navDot, { backgroundColor: current === item.key ? colors.ink : (GROUP_COLOR[group] || colors.gold) }]} />
                 <Text style={[styles.navText, current === item.key && styles.navTextOn]}>{item.title}</Text>
               </Pressable>
             ))}
@@ -285,23 +321,26 @@ const styles = StyleSheet.create({
   loginWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20 },
   loginCard: {
     width: '100%',
-    maxWidth: 440,
+    maxWidth: 460,
     backgroundColor: colors.card,
-    borderRadius: 20,
-    padding: 24,
+    borderRadius: 22,
+    padding: 22,
+    paddingTop: 0,
     gap: 12,
     borderWidth: 1,
     borderColor: colors.line,
-    borderTopWidth: 6,
-    borderTopColor: colors.amber,
+    overflow: 'hidden',
   },
+  ribbon: { flexDirection: 'row', height: 8, marginHorizontal: -22, marginBottom: 8 },
+  ribbonBar: { flexDirection: 'row', height: 6 },
+  ribbonCell: { flex: 1 },
   sideUser: { color: colors.text, marginTop: 16, fontWeight: '700' },
   sideRole: { color: colors.gold, fontSize: 12 },
   group: { color: colors.muted, fontSize: 11, fontWeight: '800', letterSpacing: 1, marginBottom: 6 },
-  navItem: { paddingVertical: 8, paddingHorizontal: 8, borderRadius: 8 },
-  navOn: { backgroundColor: '#3a2d14', borderLeftWidth: 3, borderLeftColor: colors.amber },
-  navText: { color: colors.text },
-  navTextOn: { color: colors.gold, fontWeight: '700' },
+  navItem: { minHeight: 44, paddingVertical: 10, paddingHorizontal: 10, borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  navDot: { width: 8, height: 8, borderRadius: 4 },
+  navText: { color: colors.text, fontSize: 15 },
+  navTextOn: { color: colors.ink, fontWeight: '800' },
   logout: { marginTop: 24, padding: 8 },
   topBar: {
     height: 56,
@@ -315,7 +354,7 @@ const styles = StyleSheet.create({
   },
   topTitle: { flex: 1, color: colors.text, fontFamily: font.title, fontSize: 18, fontWeight: '700' },
   topUser: { color: colors.gold, fontSize: 12, fontWeight: '700', maxWidth: 110 },
-  menuBtn: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 10, backgroundColor: colors.amber },
+  menuBtn: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 14, borderRadius: 12, backgroundColor: colors.amber },
   menuBtnText: { color: colors.ink, fontWeight: '800', fontSize: 13 },
   backdrop: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: 'rgba(6,8,12,0.55)', zIndex: 4 },
   home: { padding: 28, paddingBottom: 48, gap: 8, width: '100%', maxWidth: 1080, alignSelf: 'center' },
@@ -324,8 +363,8 @@ const styles = StyleSheet.create({
   helloPhone: { fontSize: 28 },
   hero: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-end', gap: 12, marginBottom: 6 },
   heroPhone: { flexDirection: 'column', alignItems: 'stretch' },
-  monthPill: { backgroundColor: '#241c33', borderRadius: 16, paddingVertical: 12, paddingHorizontal: 16, minWidth: 150, borderWidth: 1, borderColor: '#4a3d72' },
-  monthLabel: { color: '#c7b6ff', fontSize: 11, fontWeight: '800', letterSpacing: 0.6, textTransform: 'uppercase' },
+  monthPill: { backgroundColor: '#2a2158', borderRadius: 16, paddingVertical: 12, paddingHorizontal: 16, minWidth: 150, borderWidth: 1, borderColor: colors.violet },
+  monthLabel: { color: '#d9d0ff', fontSize: 11, fontWeight: '800', letterSpacing: 0.6, textTransform: 'uppercase' },
   monthValue: { color: colors.text, fontSize: 18, fontWeight: '800', marginTop: 4 },
   monthMoney: { color: colors.gold, fontWeight: '700', marginTop: 2 },
   metricWrap: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -6 },

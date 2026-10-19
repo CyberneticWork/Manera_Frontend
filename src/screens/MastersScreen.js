@@ -83,7 +83,7 @@ export function UsersScreen({ onBack }) {
   }, []);
 
   return (
-    <Screen title="Users" subtitle="Each person gets one role. That role decides which menus they see." onBack={onBack}>
+    <Screen title="Users" subtitle="Each person gets one role. Access Control decides which screens that role can open after JWT login." onBack={onBack}>
       <Banner text={error} />
       <Banner text={message} kind="ok" />
       <Card>

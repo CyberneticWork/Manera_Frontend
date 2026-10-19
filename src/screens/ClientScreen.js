@@ -39,6 +39,8 @@ export function ClientScreen({ onBack, docNo, readOnly }) {
   const [lookups, setLookups] = useState({});
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [uploading, setUploading] = useState('');
+  const [storageReady, setStorageReady] = useState(true);
   const screenRef = useRef(null);
   const { phone } = useLayout();
 
@@ -86,6 +88,7 @@ export function ClientScreen({ onBack, docNo, readOnly }) {
 
   useEffect(() => {
     api('/api/lookups').then(setLookups).catch((e) => setError(e.message));
+    api('/api/firebase/status').then((row) => setStorageReady(Boolean(row.configured))).catch(() => setStorageReady(false));
     loadPending().catch((e) => setError(e.message));
     if (docNo) openJob(docNo).catch((e) => setError(e.message));
   }, [docNo]);
@@ -133,60 +136,91 @@ export function ClientScreen({ onBack, docNo, readOnly }) {
     }
   }
 
+  function noteError(text) {
+    setMessage('');
+    setError(text);
+    screenRef.current?.scrollTo?.({ y: 0, animated: true });
+  }
+
+  function chooseWebFile(accept) {
+    return new Promise((resolve) => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = accept;
+      input.style.position = 'fixed';
+      input.style.left = '-1000px';
+      document.body.appendChild(input);
+      const finish = (file) => {
+        input.remove();
+        resolve(file || null);
+      };
+      input.addEventListener('change', () => finish(input.files && input.files[0]));
+      input.addEventListener('cancel', () => finish(null));
+      input.click();
+    });
+  }
+
   async function addPhoto() {
     if (!form.docNo) {
-      setError('Save the job before adding photos');
+      noteError('Save the job before adding photos');
       return;
     }
-    const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7 });
-    if (picked.canceled) return;
-    const asset = picked.assets[0];
-    const data = new FormData();
-    data.append('type', imageType);
-    if (Platform.OS === 'web') {
-      const blob = await (await fetch(asset.uri)).blob();
-      data.append('image', blob, 'photo.jpg');
-    } else {
-      data.append('image', { uri: asset.uri, name: 'photo.jpg', type: asset.mimeType || 'image/jpeg' });
-    }
     try {
+      const data = new FormData();
+      data.append('type', imageType);
+      if (Platform.OS === 'web') {
+        const file = await chooseWebFile('image/*');
+        if (!file) return;
+        data.append('image', file, file.name || 'photo.jpg');
+      } else {
+        const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7 });
+        if (picked.canceled) return;
+        const asset = picked.assets[0];
+        data.append('image', { uri: asset.uri, name: asset.fileName || 'photo.jpg', type: asset.mimeType || 'image/jpeg' });
+      }
+      setUploading('photo');
+      setError('');
       await api(`/api/clients/${form.docNo}/images`, { method: 'POST', body: data });
       await openJob(form.docNo);
-      setMessage('Photo saved');
+      setMessage('Photo saved in Firebase');
     } catch (e) {
-      setError(e.message);
+      noteError(e.message);
+    } finally {
+      setUploading('');
     }
   }
 
   async function addDocument() {
     if (!form.docNo) {
-      setError('Save the job before adding documents');
+      noteError('Save the job before adding documents');
       return;
     }
-    const picked = await DocumentPicker.getDocumentAsync({
-      copyToCacheDirectory: true,
-      type: ['application/pdf', 'image/*', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
-    });
-    if (picked.canceled) return;
-    const asset = picked.assets[0];
-    const data = new FormData();
-    data.append('type', 'Document');
-    if (Platform.OS === 'web') {
-      const blob = await (await fetch(asset.uri)).blob();
-      data.append('document', blob, asset.name || 'document');
-    } else {
-      data.append('document', {
-        uri: asset.uri,
-        name: asset.name || 'document',
-        type: asset.mimeType || 'application/octet-stream',
-      });
-    }
     try {
+      const data = new FormData();
+      data.append('type', 'Document');
+      if (Platform.OS === 'web') {
+        const file = await chooseWebFile('.pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,application/pdf,image/*');
+        if (!file) return;
+        data.append('document', file, file.name || 'document');
+      } else {
+        const picked = await DocumentPicker.getDocumentAsync({ copyToCacheDirectory: true, type: '*/*' });
+        if (picked.canceled) return;
+        const asset = picked.assets[0];
+        data.append('document', {
+          uri: asset.uri,
+          name: asset.name || 'document',
+          type: asset.mimeType || 'application/octet-stream',
+        });
+      }
+      setUploading('document');
+      setError('');
       await api(`/api/clients/${form.docNo}/documents`, { method: 'POST', body: data });
       await openJob(form.docNo);
-      setMessage('Document saved');
+      setMessage('Document saved in Firebase');
     } catch (e) {
-      setError(e.message);
+      noteError(e.message);
+    } finally {
+      setUploading('');
     }
   }
 
@@ -267,14 +301,15 @@ export function ClientScreen({ onBack, docNo, readOnly }) {
 
       <Card>
         <Heading>Photos</Heading>
+        {!storageReady ? <Text style={styles.photoEmpty}>Firebase is not connected yet. A super admin must open Firebase and save the storage account before photos can be kept.</Text> : null}
         <Row>
           <PickerField label="Image type" value={imageType} options={opts('imageType')} onChange={setImageType} />
-          {readOnly ? null : <Button title="Upload photo" onPress={addPhoto} />}
+          {readOnly ? null : <Button title={uploading === 'photo' ? 'Uploading…' : 'Upload photo'} onPress={addPhoto} disabled={Boolean(uploading)} />}
         </Row>
         <View style={styles.photos}>
           {images.map((image) => (
             <View key={image.id} style={[styles.photoWrap, phone && styles.photoWrapPhone]}>
-              <Image source={{ uri: fileUrl(image.url) }} style={styles.photo} />
+              <StoredImage image={image} />
             </View>
           ))}
           {!images.length ? <Text style={styles.photoEmpty}>No photos attached.</Text> : null}
@@ -283,9 +318,9 @@ export function ClientScreen({ onBack, docNo, readOnly }) {
 
       <Card>
         <Heading>Documents</Heading>
-        {readOnly ? null : <Button title="Upload document" onPress={addDocument} />}
+        {readOnly ? null : <Button title={uploading === 'document' ? 'Uploading…' : 'Upload document'} onPress={addDocument} disabled={Boolean(uploading)} />}
         {documents.map((document) => (
-          <Pressable key={document.id} onPress={() => Linking.openURL(fileUrl(document.url))}>
+          <Pressable key={document.id} onPress={() => Linking.openURL(fileUrl(document.url || `/api/media/documents/${document.id}`))}>
             <Text style={styles.docLink}>{document.file_name || document.type || 'Document'}</Text>
           </Pressable>
         ))}
@@ -308,6 +343,22 @@ export function ClientScreen({ onBack, docNo, readOnly }) {
       />
       </Card>
     </Screen>
+  );
+}
+
+function StoredImage({ image }) {
+  const firebase = fileUrl(image.url);
+  const copy = fileUrl(`/api/media/images/${image.id}`);
+  const [uri, setUri] = useState(firebase || copy);
+  return (
+    <Image
+      source={{ uri }}
+      style={styles.photo}
+      resizeMode="contain"
+      onError={() => {
+        if (uri !== copy) setUri(copy);
+      }}
+    />
   );
 }
 
