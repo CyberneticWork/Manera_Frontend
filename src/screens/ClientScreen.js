@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { Image, Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
-import * as DocumentPicker from 'expo-document-picker';
+import { Image, Platform, StyleSheet, Text, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { api, fileUrl } from '../api';
 import { colors, money, todayIso } from '../theme';
-import { Banner, Button, Card, Field, Heading, PickerField, Row, Screen, Table, useLayout } from '../ui';
+import { useAccess } from '../access';
+import { Banner, Button, Card, Field, Heading, PickerField, RemoveLink, Row, Screen, Table, useLayout } from '../ui';
 
 const empty = () => ({
   docNo: '',
@@ -33,7 +33,6 @@ export function ClientScreen({ onBack, docNo, readOnly }) {
   const [items, setItems] = useState([]);
   const [draft, setDraft] = useState(emptyItem());
   const [images, setImages] = useState([]);
-  const [documents, setDocuments] = useState([]);
   const [imageType, setImageType] = useState('Item');
   const [pending, setPending] = useState([]);
   const [lookups, setLookups] = useState({});
@@ -42,6 +41,9 @@ export function ClientScreen({ onBack, docNo, readOnly }) {
   const [uploading, setUploading] = useState('');
   const [storageReady, setStorageReady] = useState(true);
   const screenRef = useRef(null);
+  const { can } = useAccess();
+  const canChange = form.docNo ? (can('clients', 'update') || can('cashier', 'update')) : can('clients', 'create');
+  const canRemove = can('clients', 'delete') || can('cashier', 'delete');
   const { phone } = useLayout();
 
   function set(key, value) {
@@ -82,7 +84,6 @@ export function ClientScreen({ onBack, docNo, readOnly }) {
       description: item.description || '',
     })));
     setImages(job.images || []);
-    setDocuments(job.documents || []);
     screenRef.current?.scrollTo({ y: 0, animated: true });
   }
 
@@ -129,7 +130,6 @@ export function ClientScreen({ onBack, docNo, readOnly }) {
       setForm(empty());
       setItems([]);
       setImages([]);
-      setDocuments([]);
       await loadPending();
     } catch (e) {
       setError(e.message);
@@ -142,13 +142,16 @@ export function ClientScreen({ onBack, docNo, readOnly }) {
     screenRef.current?.scrollTo?.({ y: 0, animated: true });
   }
 
-  function chooseWebFile(accept) {
+  function chooseWebFile(capture) {
     return new Promise((resolve) => {
       const input = document.createElement('input');
       input.type = 'file';
-      input.accept = accept;
+      input.accept = 'image/*';
+      if (capture) input.setAttribute('capture', 'environment');
       input.style.position = 'fixed';
-      input.style.left = '-1000px';
+      input.style.opacity = '0';
+      input.style.width = '1px';
+      input.style.height = '1px';
       document.body.appendChild(input);
       const finish = (file) => {
         input.remove();
@@ -160,7 +163,7 @@ export function ClientScreen({ onBack, docNo, readOnly }) {
     });
   }
 
-  async function addPhoto() {
+  async function addPhoto(source) {
     if (!form.docNo) {
       noteError('Save the job before adding photos');
       return;
@@ -169,10 +172,26 @@ export function ClientScreen({ onBack, docNo, readOnly }) {
       const data = new FormData();
       data.append('type', imageType);
       if (Platform.OS === 'web') {
-        const file = await chooseWebFile('image/*');
+        const file = await chooseWebFile(source === 'camera');
         if (!file) return;
-        data.append('image', file, file.name || 'photo.jpg');
+        const name = file.name && file.name !== 'image.jpg' ? file.name : `photo-${Date.now()}.jpg`;
+        data.append('image', file, name);
+      } else if (source === 'camera') {
+        const permission = await ImagePicker.requestCameraPermissionsAsync();
+        if (!permission.granted) {
+          noteError('Allow camera access to take a photo');
+          return;
+        }
+        const picked = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.7 });
+        if (picked.canceled) return;
+        const asset = picked.assets[0];
+        data.append('image', { uri: asset.uri, name: asset.fileName || `photo-${Date.now()}.jpg`, type: asset.mimeType || 'image/jpeg' });
       } else {
+        const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!permission.granted) {
+          noteError('Allow photo library access to choose a picture');
+          return;
+        }
         const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7 });
         if (picked.canceled) return;
         const asset = picked.assets[0];
@@ -190,37 +209,27 @@ export function ClientScreen({ onBack, docNo, readOnly }) {
     }
   }
 
-  async function addDocument() {
-    if (!form.docNo) {
-      noteError('Save the job before adding documents');
-      return;
-    }
+  async function removeJob() {
+    if (!form.docNo) return;
     try {
-      const data = new FormData();
-      data.append('type', 'Document');
-      if (Platform.OS === 'web') {
-        const file = await chooseWebFile('.pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,application/pdf,image/*');
-        if (!file) return;
-        data.append('document', file, file.name || 'document');
-      } else {
-        const picked = await DocumentPicker.getDocumentAsync({ copyToCacheDirectory: true, type: '*/*' });
-        if (picked.canceled) return;
-        const asset = picked.assets[0];
-        data.append('document', {
-          uri: asset.uri,
-          name: asset.name || 'document',
-          type: asset.mimeType || 'application/octet-stream',
-        });
-      }
-      setUploading('document');
-      setError('');
-      await api(`/api/clients/${form.docNo}/documents`, { method: 'POST', body: data });
-      await openJob(form.docNo);
-      setMessage('Document saved in Firebase');
+      await api(`/api/clients/${form.docNo}`, { method: 'DELETE' });
+      setForm(empty());
+      setItems([]);
+      setImages([]);
+      setMessage('Job removed. It stays in the database but is hidden from the desk and reports.');
+      await loadPending();
     } catch (e) {
       noteError(e.message);
-    } finally {
-      setUploading('');
+    }
+  }
+
+  async function removePhoto(image) {
+    try {
+      await api(`/api/clients/${form.docNo}/images/${image.id}`, { method: 'DELETE' });
+      await openJob(form.docNo);
+      setMessage('Photo deleted from Firebase');
+    } catch (e) {
+      noteError(e.message);
     }
   }
 
@@ -256,11 +265,12 @@ export function ClientScreen({ onBack, docNo, readOnly }) {
           <Field label="Total amount" value={form.totalAmount} onChangeText={(v) => set('totalAmount', v)} keyboardType="decimal-pad" />
         </Row>
         <Field label="Note" value={form.note} onChangeText={(v) => set('note', v)} multiline />
-        {readOnly ? null : (
+        {readOnly || !canChange ? null : (
           <Row>
             <Button title={form.docNo ? 'Update job' : 'Save job'} onPress={() => save(true)} />
-            <Button title="Clear" kind="ghost" onPress={() => { setForm(empty()); setItems([]); setImages([]); setDocuments([]); }} />
-            <Button title="Reject" kind="danger" onPress={reject} />
+            <Button title="Clear" kind="ghost" onPress={() => { setForm(empty()); setItems([]); setImages([]); }} />
+            {can('clients', 'update') ? <Button title="Reject" kind="danger" onPress={reject} /> : null}
+            {form.docNo && canRemove ? <Button title="Remove job" kind="danger" onPress={removeJob} /> : null}
           </Row>
         )}
       </Card>
@@ -293,6 +303,11 @@ export function ClientScreen({ onBack, docNo, readOnly }) {
             { key: 'condition', label: 'Condition' },
             { key: 'weight', label: 'Weight' },
             { key: 'rate', label: 'Rate' },
+            ...(readOnly || !canChange ? [] : [{
+              key: 'remove',
+              label: '',
+              render: (row) => <RemoveLink onPress={() => setItems((list) => list.filter((_, index) => index !== row.id))} />,
+            }]),
           ]}
           rows={items.map((item, index) => ({ ...item, id: index }))}
           empty="No items yet."
@@ -304,27 +319,17 @@ export function ClientScreen({ onBack, docNo, readOnly }) {
         {!storageReady ? <Text style={styles.photoEmpty}>Firebase is not connected yet. A super admin must open Firebase and save the storage account before photos can be kept.</Text> : null}
         <Row>
           <PickerField label="Image type" value={imageType} options={opts('imageType')} onChange={setImageType} />
-          {readOnly ? null : <Button title={uploading === 'photo' ? 'Uploading…' : 'Upload photo'} onPress={addPhoto} disabled={Boolean(uploading)} />}
+          {readOnly || !canChange ? null : <Button title={uploading === 'photo' ? 'Uploading…' : 'Camera'} onPress={() => addPhoto('camera')} disabled={Boolean(uploading)} />}
+          {readOnly || !canChange ? null : <Button title="Photo library" kind="ghost" onPress={() => addPhoto('library')} disabled={Boolean(uploading)} />}
         </Row>
         <View style={styles.photos}>
           {images.map((image) => (
             <View key={image.id} style={[styles.photoWrap, phone && styles.photoWrapPhone]}>
-              <StoredImage image={image} />
+              <StoredImage image={image} onRemove={canRemove ? () => removePhoto(image) : null} />
             </View>
           ))}
           {!images.length ? <Text style={styles.photoEmpty}>No photos attached.</Text> : null}
         </View>
-      </Card>
-
-      <Card>
-        <Heading>Documents</Heading>
-        {readOnly ? null : <Button title={uploading === 'document' ? 'Uploading…' : 'Upload document'} onPress={addDocument} disabled={Boolean(uploading)} />}
-        {documents.map((document) => (
-          <Pressable key={document.id} onPress={() => Linking.openURL(fileUrl(document.url || `/api/media/documents/${document.id}`))}>
-            <Text style={styles.docLink}>{document.file_name || document.type || 'Document'}</Text>
-          </Pressable>
-        ))}
-        {!documents.length ? <Text style={styles.photoEmpty}>No documents attached.</Text> : null}
       </Card>
 
       <Card>
@@ -336,6 +341,22 @@ export function ClientScreen({ onBack, docNo, readOnly }) {
           { key: 'mobile_no', label: 'Mobile' },
           { key: 'agent_name', label: 'Agent' },
           { key: 'total_amount', label: 'Amount', render: (row) => money(row.total_amount) },
+          ...(canRemove ? [{
+            key: 'remove',
+            label: '',
+            render: (row) => <RemoveLink onPress={async () => {
+              try {
+                await api(`/api/clients/${row.doc_no}`, { method: 'DELETE' });
+                if (form.docNo === row.doc_no) {
+                  setForm(empty());
+                  setItems([]);
+                  setImages([]);
+                }
+                setMessage('Job removed. It stays in the database but is hidden from the desk and reports.');
+                await loadPending();
+              } catch (e) { noteError(e.message); }
+            }} />,
+          }] : []),
         ]}
         rows={pending}
         onPressRow={(row) => openJob(row.doc_no).catch((e) => setError(e.message))}
@@ -346,19 +367,24 @@ export function ClientScreen({ onBack, docNo, readOnly }) {
   );
 }
 
-function StoredImage({ image }) {
+function StoredImage({ image, onRemove }) {
   const firebase = fileUrl(image.url);
   const copy = fileUrl(`/api/media/images/${image.id}`);
   const [uri, setUri] = useState(firebase || copy);
+  const label = image.type || 'Photo';
   return (
-    <Image
-      source={{ uri }}
-      style={styles.photo}
-      resizeMode="contain"
-      onError={() => {
-        if (uri !== copy) setUri(copy);
-      }}
-    />
+    <View>
+      <Image
+        source={{ uri }}
+        style={styles.photo}
+        resizeMode="contain"
+        onError={() => {
+          if (uri !== copy) setUri(copy);
+        }}
+      />
+      <Text style={styles.photoType} numberOfLines={1}>{label}</Text>
+      {onRemove ? <RemoveLink onPress={onRemove} /> : null}
+    </View>
   );
 }
 
@@ -369,6 +395,6 @@ const styles = StyleSheet.create({
   photoWrap: { width: 148, padding: 5 },
   photoWrapPhone: { width: '50%' },
   photo: { width: '100%', aspectRatio: 1, borderRadius: 12, backgroundColor: colors.input },
+  photoType: { color: colors.ink, backgroundColor: colors.amber, fontWeight: '800', fontSize: 12, textAlign: 'center', marginTop: 6, paddingVertical: 4, paddingHorizontal: 8, borderRadius: 999, overflow: 'hidden' },
   photoEmpty: { color: colors.muted, padding: 8 },
-  docLink: { color: colors.teal, fontWeight: '700', marginTop: 8 },
 });

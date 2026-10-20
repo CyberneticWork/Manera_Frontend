@@ -11,13 +11,33 @@
       "android",
       "web"
     ],
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Gold Store uses the camera to photograph gold items and customer photos.",
+        "NSPhotoLibraryUsageDescription": "Gold Store uses your photo library to attach pictures to a job."
+      }
+    },
+    "android": {
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_MEDIA_IMAGES"
+      ]
+    },
     "web": {
       "bundler": "metro",
       "output": "single"
     },
     "plugins": [
       "expo-asset",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Gold Store uses your photo library to attach pictures to a job.",
+          "cameraPermission": "Gold Store uses the camera to photograph gold items and customer photos."
+        }
+      ]
     ]
   }
 }

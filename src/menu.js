@@ -17,11 +17,17 @@ export const MENU = [
   { key: 'access', title: 'Access Code', hint: 'Unlock reports for a date', group: 'Manager', roles: ['Admin'] },
 ];
 
+export function canDo(role, permissions, screen, action) {
+  if (role === 'SAdmin') return true;
+  if (!Array.isArray(permissions)) return action !== 'delete';
+  if (permissions.includes(`${screen}:${action}`)) return true;
+  return action === 'view' && permissions.includes(screen);
+}
+
 export function menuFor(role, permissions) {
   if (role === 'SAdmin') return MENU;
   if (Array.isArray(permissions)) {
-    const allowed = new Set(permissions);
-    return MENU.filter((item) => allowed.has(item.key));
+    return MENU.filter((item) => permissions.includes(item.key) || permissions.includes(`${item.key}:view`));
   }
   return MENU.filter((item) => item.roles.includes(role));
 }

@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Text } from 'react-native';
 import { api } from '../api';
+import { useAccess } from '../access';
 import { colors, money, todayIso } from '../theme';
-import { Banner, Button, Card, Field, PickerField, Row, Screen, Table, Tabs } from '../ui';
+import { Banner, Button, Card, Field, PickerField, RemoveLink, Row, Screen, Table, Tabs } from '../ui';
 
 const roles = ['CashBook', 'Bank', 'Purchase', 'SalesIncome', 'Income', 'Inventory', 'VAT', 'NBT', 'BankCharges', 'RecivedCheque'];
 
@@ -18,6 +19,7 @@ export function AccountsScreen({ onBack }) {
   const [notes, setNotes] = useState({ debit: [], credit: [] });
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const { can } = useAccess();
 
   async function reload() {
     const [accounts, noteRows] = await Promise.all([api('/api/accounts'), api('/api/notes')]);
@@ -49,25 +51,25 @@ export function AccountsScreen({ onBack }) {
             <PickerField label="Detail" value={form.subtypeCode} options={data.subtypes.filter((row) => row.group_code === form.groupCode).map((row) => ({ value: row.code, label: row.description }))} onChange={(subtypeCode) => setForm({ ...form, subtypeCode })} />
             <Field label="Opening" value={form.opening} onChangeText={(opening) => setForm({ ...form, opening })} keyboardType="decimal-pad" />
           </Row>
-          <Button title="Create account" onPress={async () => {
+          {can('accounts', 'create') ? <Button title="Create account" onPress={async () => {
             try {
               const created = await api('/api/accounts', { method: 'POST', body: form });
               setMessage(`Account ${created.code} created`);
               setForm({ ...form, name: '' });
               await reload();
             } catch (e) { setError(e.message); }
-          }} />
+          }} /> : null}
           <Row>
             <PickerField label="System role" value={mapRole} options={roles.map((value) => ({ value, label: value }))} onChange={setMapRole} />
             <PickerField label="Account" value={mapCode} options={accountOptions} onChange={setMapCode} />
           </Row>
-          <Button title="Save account link" kind="ghost" onPress={async () => {
+          {can('accounts', 'update') ? <Button title="Save account link" kind="ghost" onPress={async () => {
             try {
               await api('/api/accounts/settings/map', { method: 'PUT', body: { settings: mapRole, code: mapCode } });
               setMessage('Link saved');
               await reload();
             } catch (e) { setError(e.message); }
-          }} />
+          }} /> : null}
           <Table
             columns={[
               { key: 'code', label: 'Code' },
@@ -75,6 +77,17 @@ export function AccountsScreen({ onBack }) {
               { key: 'group_name', label: 'Type' },
               { key: 'normal_balance', label: 'Side' },
               { key: 'settings', label: 'Link' },
+              ...(can('accounts', 'delete') ? [{
+                key: 'remove',
+                label: '',
+                render: (row) => <RemoveLink onPress={async () => {
+                  try {
+                    await api(`/api/accounts/${row.code}`, { method: 'DELETE' });
+                    setMessage('Account removed');
+                    await reload();
+                  } catch (e) { setError(e.message); }
+                }} />,
+              }] : []),
             ]}
             rows={data.accounts}
           />
@@ -105,19 +118,24 @@ export function AccountsScreen({ onBack }) {
               { key: 'name', label: 'Name' },
               { key: 'debit', label: 'Debit', render: (row) => money(row.debit) },
               { key: 'credit', label: 'Credit', render: (row) => money(row.credit) },
+              {
+                key: 'remove',
+                label: '',
+                render: (row) => <RemoveLink onPress={() => setJournal({ ...journal, lines: journal.lines.filter((item) => item.id !== row.id) })} />,
+              },
             ]}
             rows={journal.lines}
           />
           <Text style={{ color: colors.muted }}>
             Debit {money(journal.lines.reduce((s, row) => s + Number(row.debit || 0), 0))} · Credit {money(journal.lines.reduce((s, row) => s + Number(row.credit || 0), 0))}
           </Text>
-          <Button title="Post journal" onPress={async () => {
+          {can('accounts', 'create') ? <Button title="Post journal" onPress={async () => {
             try {
               const saved = await api('/api/journal', { method: 'POST', body: journal });
               setMessage(`Posted ${saved.glNo}`);
               setJournal({ date: journal.date, remarks: '', lines: [] });
             } catch (e) { setError(e.message); }
-          }} />
+          }} /> : null}
         </Card>
       ) : null}
       {tab === 'notes' ? (
@@ -140,20 +158,31 @@ export function AccountsScreen({ onBack }) {
             ) : null}
           </Row>
           <Field label="Remarks" value={note.remarks} onChangeText={(remarks) => setNote({ ...note, remarks })} />
-          <Button title="Post note" onPress={async () => {
+          {can('accounts', 'create') ? <Button title="Post note" onPress={async () => {
             try {
               const path = note.kind === 'debit' ? '/api/notes/debit' : '/api/notes/credit';
               const saved = await api(path, { method: 'POST', body: note });
               setMessage(`Posted ${saved.noteNo}`);
               await reload();
             } catch (e) { setError(e.message); }
-          }} />
+          }} /> : null}
           <Table
             columns={[
               { key: 'note_no', label: 'No' },
               { key: 'date', label: 'Date' },
               { key: 'amount', label: 'Amount', render: (row) => money(row.amount) },
               { key: 'remarks', label: 'Remarks' },
+              ...(can('accounts', 'delete') ? [{
+                key: 'remove',
+                label: '',
+                render: (row) => <RemoveLink onPress={async () => {
+                  try {
+                    await api(`/api/notes/${note.kind}/${row.id}`, { method: 'DELETE' });
+                    setMessage('Note removed');
+                    await reload();
+                  } catch (e) { setError(e.message); }
+                }} />,
+              }] : []),
             ]}
             rows={note.kind === 'debit' ? notes.debit : notes.credit}
           />
@@ -170,6 +199,7 @@ const cashAccounts = [
 ];
 
 export function TransferScreen({ onBack }) {
+  const { can } = useAccess();
   const [form, setForm] = useState({ from: '15001', to: '15002', date: todayIso(), amount: '', description: '' });
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -185,13 +215,13 @@ export function TransferScreen({ onBack }) {
           <Field label="Amount" value={form.amount} onChangeText={(amount) => setForm({ ...form, amount })} keyboardType="decimal-pad" />
         </Row>
         <Field label="Description" value={form.description} onChangeText={(description) => setForm({ ...form, description })} />
-        <Button title="Transfer" onPress={async () => {
+        {can('transfer', 'create') ? <Button title="Transfer" onPress={async () => {
           try {
             await api('/api/cash/transfer', { method: 'POST', body: form });
             setMessage('Transfer posted');
             setForm({ ...form, amount: '', description: '' });
           } catch (e) { setError(e.message); }
-        }} />
+        }} /> : null}
       </Card>
     </Screen>
   );
@@ -204,6 +234,7 @@ export function ExpensesScreen({ onBack }) {
   const [remarks, setRemarks] = useState('');
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const { can } = useAccess();
 
   async function load(next = date) {
     const data = await api(`/api/cash/petty?date=${next}`);
@@ -234,10 +265,15 @@ export function ExpensesScreen({ onBack }) {
           columns={[
             { key: 'remarks', label: 'Remarks', flex: 2 },
             { key: 'amount', label: 'Amount', render: (row) => money(row.amount || row.debit) },
+            ...(can('expenses', 'delete') ? [{
+              key: 'remove',
+              label: '',
+              render: (row) => <RemoveLink onPress={() => setRows((list) => list.filter((item) => item !== row && item.id !== row.id))} />,
+            }] : []),
           ]}
           rows={rows.map((row) => ({ ...row, amount: row.amount || row.debit }))}
         />
-        <Button title="Save expenses" onPress={async () => {
+        {can('expenses', 'create') ? <Button title="Save expenses" onPress={async () => {
           try {
             await api('/api/cash/petty', {
               method: 'POST',
@@ -246,7 +282,7 @@ export function ExpensesScreen({ onBack }) {
             setMessage('Expenses saved');
             await load();
           } catch (e) { setError(e.message); }
-        }} />
+        }} /> : null}
       </Card>
     </Screen>
   );

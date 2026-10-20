@@ -83,7 +83,7 @@ export function ReportsScreen({ onBack }) {
           <Field label="To" value={to} onChangeText={setTo} />
           <Field label="Access code" value={code} onChangeText={setCode} placeholder="ABC123" />
           {needsJob ? (
-            <Field label="Job no" value={jobNo} onChangeText={setJobNo} placeholder="Job no or doc no. Blank prints every job" />
+            <Field label="Job no" value={jobNo} onChangeText={setJobNo} placeholder="Payout no, doc no, or job note. Blank prints every paid job" />
           ) : null}
         </Row>
         <Button title={busy ? 'Preparing report…' : 'Print PDF'} onPress={printPdf} disabled={busy} />

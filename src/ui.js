@@ -58,7 +58,7 @@ export function Heading({ children, aside }) {
   );
 }
 
-export function Field({ label, value, onChangeText, placeholder, keyboardType, secureTextEntry, multiline }) {
+export function Field({ label, value, onChangeText, placeholder, keyboardType, secureTextEntry, multiline, autoComplete, editable = true }) {
   return (
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
@@ -70,16 +70,36 @@ export function Field({ label, value, onChangeText, placeholder, keyboardType, s
         keyboardType={keyboardType}
         secureTextEntry={secureTextEntry}
         multiline={multiline}
-        style={[styles.input, multiline && styles.multiline]}
+        autoComplete={autoComplete}
+        editable={editable}
+        style={[styles.input, multiline && styles.multiline, editable ? null : styles.locked]}
       />
     </View>
+  );
+}
+
+export function RemoveLink({ title = 'Remove', onPress }) {
+  return (
+    <Pressable
+      onPress={(event) => {
+        event?.stopPropagation?.();
+        onPress();
+      }}
+      accessibilityRole="button"
+      style={pointer}
+    >
+      <Text style={styles.removeLink}>{title}</Text>
+    </Pressable>
   );
 }
 
 export function Button({ title, onPress, kind = 'primary', disabled }) {
   return (
     <Pressable
-      onPress={onPress}
+      onPress={(event) => {
+        event?.stopPropagation?.();
+        if (!disabled && onPress) onPress();
+      }}
       disabled={disabled}
       accessibilityRole="button"
       style={[styles.button, styles[`btn_${kind}`], disabled && styles.disabled]}
@@ -157,9 +177,12 @@ export function Row({ children }) {
   );
 }
 
-function cellText(col, row) {
-  const value = col.render ? col.render(row) : row[col.key];
-  return value == null || value === '' ? '—' : String(value);
+function cellValue(col, row) {
+  return col.render ? col.render(row) : row[col.key];
+}
+
+function isElement(value) {
+  return value != null && typeof value === 'object';
 }
 
 export function Table({ columns, rows, onPressRow, empty = 'No records' }) {
@@ -174,13 +197,16 @@ export function Table({ columns, rows, onPressRow, empty = 'No records' }) {
             onPress={() => onPressRow && onPressRow(row)}
             style={styles.record}
           >
-            <Text style={styles.recordTitle}>{cellText(columns[0], row)}</Text>
-            {columns.slice(1).map((col) => (
-              <View key={col.key} style={styles.recordLine}>
-                <Text style={styles.recordLabel}>{col.label}</Text>
-                <Text style={styles.recordValue}>{cellText(col, row)}</Text>
-              </View>
-            ))}
+            <Text style={styles.recordTitle}>{isElement(cellValue(columns[0], row)) ? cellValue(columns[0], row) : (cellValue(columns[0], row) == null || cellValue(columns[0], row) === '' ? '—' : String(cellValue(columns[0], row)))}</Text>
+            {columns.slice(1).map((col) => {
+              const value = cellValue(col, row);
+              return (
+                <View key={col.key} style={styles.recordLine}>
+                  {col.label ? <Text style={styles.recordLabel}>{col.label}</Text> : null}
+                  {isElement(value) ? value : <Text style={styles.recordValue}>{value == null || value === '' ? '—' : String(value)}</Text>}
+                </View>
+              );
+            })}
           </Pressable>
         ))}
       </View>
@@ -196,11 +222,15 @@ export function Table({ columns, rows, onPressRow, empty = 'No records' }) {
       {!rows.length ? <Text style={[styles.sub, { padding: 12 }]}>{empty}</Text> : null}
       {rows.map((row, index) => (
         <Pressable key={String(row.id ?? row.doc_no ?? row.job_no ?? index)} onPress={() => onPressRow && onPressRow(row)} style={styles.tr}>
-          {columns.map((col) => (
-            <Text key={col.key} style={[styles.td, { flex: col.flex || 1 }]} numberOfLines={2}>
-              {cellText(col, row)}
-            </Text>
-          ))}
+          {columns.map((col) => {
+            const value = cellValue(col, row);
+            if (isElement(value)) return <View key={col.key} style={[styles.td, { flex: col.flex || 1 }]}>{value}</View>;
+            return (
+              <Text key={col.key} style={[styles.td, { flex: col.flex || 1 }]} numberOfLines={2}>
+                {value == null || value === '' ? '—' : String(value)}
+              </Text>
+            );
+          })}
         </Pressable>
       ))}
     </View>
@@ -266,9 +296,10 @@ const styles = StyleSheet.create({
     minHeight: 48,
     justifyContent: 'center',
     fontFamily: font.body,
-    fontSize: 15,
+    fontSize: 16,
   },
   multiline: { minHeight: 96, textAlignVertical: 'top' },
+  locked: { color: colors.text, borderColor: colors.amber },
   button: { borderRadius: 12, paddingVertical: 13, paddingHorizontal: 16, alignItems: 'center', ...pointer },
   btn_primary: { backgroundColor: colors.amber },
   btn_danger: { backgroundColor: colors.coral },
@@ -324,4 +355,5 @@ const styles = StyleSheet.create({
   },
   option: { paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.line },
   optionText: { color: colors.text, fontSize: 16, fontFamily: font.body },
+  removeLink: { color: colors.coral, fontWeight: '800', fontFamily: font.body },
 });

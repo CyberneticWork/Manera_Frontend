@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
-import { Banner, Button, Card, Field, PickerField, Row, Screen, Table, Tabs } from '../ui';
+import { useAccess } from '../access';
+import { Banner, Button, Card, Field, PickerField, RemoveLink, Row, Screen, Table, Tabs } from '../ui';
 
 const tabs = [
   { key: 'category', label: 'Category' },
@@ -20,6 +21,7 @@ export function MastersScreen({ onBack }) {
   const [category, setCategory] = useState('');
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const { can } = useAccess();
 
   async function reload() {
     setLookups(await api('/api/lookups'));
@@ -48,19 +50,30 @@ export function MastersScreen({ onBack }) {
             />
           ) : null}
         </Row>
-        <Button title="Add" onPress={async () => {
+        {can('masters', 'create') ? <Button title="Add" onPress={async () => {
           try {
             await api('/api/lookups', { method: 'POST', body: { type, description, category: type === 'item' ? category : null } });
             setDescription('');
             setMessage('Saved');
             await reload();
           } catch (e) { setError(e.message); }
-        }} />
+        }} /> : null}
       </Card>
       <Table
         columns={[
           { key: 'description', label: 'Description', flex: 2 },
           { key: 'category', label: 'Category' },
+          ...(can('masters', 'delete') ? [{
+            key: 'remove',
+            label: '',
+            render: (row) => <RemoveLink onPress={async () => {
+              try {
+                await api(`/api/lookups/${row.id}`, { method: 'DELETE' });
+                setMessage('Removed from the lists');
+                await reload();
+              } catch (e) { setError(e.message); }
+            }} />,
+          }] : []),
         ]}
         rows={rows}
       />
@@ -73,6 +86,7 @@ export function UsersScreen({ onBack }) {
   const [form, setForm] = useState({ username: '', password: '', title: '', group: 'Cashier' });
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const { can } = useAccess();
 
   async function reload() {
     setRows(await api('/api/users'));
@@ -98,14 +112,14 @@ export function UsersScreen({ onBack }) {
             onChange={(group) => setForm({ ...form, group })}
           />
         </Row>
-        <Button title="Create user" onPress={async () => {
+        {can('users', 'create') ? <Button title="Create user" onPress={async () => {
           try {
             await api('/api/users', { method: 'POST', body: form });
             setMessage('User created');
             setForm({ username: '', password: '', title: '', group: 'Cashier' });
             await reload();
           } catch (e) { setError(e.message); }
-        }} />
+        }} /> : null}
       </Card>
       <Table
         columns={[
@@ -113,6 +127,17 @@ export function UsersScreen({ onBack }) {
           { key: 'title', label: 'Title' },
           { key: 'group_code', label: 'Role' },
           { key: 'active', label: 'Active', render: (row) => (row.active ? 'Yes' : 'No') },
+          ...(can('users', 'delete') ? [{
+            key: 'remove',
+            label: '',
+            render: (row) => <RemoveLink onPress={async () => {
+              try {
+                await api(`/api/users/${row.id}`, { method: 'DELETE' });
+                setMessage('Login removed');
+                await reload();
+              } catch (e) { setError(e.message); }
+            }} />,
+          }] : []),
         ]}
         rows={rows}
       />

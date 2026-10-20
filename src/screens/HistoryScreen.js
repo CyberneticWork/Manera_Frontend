@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { api } from '../api';
+import { useAccess } from '../access';
 import { money, todayIso } from '../theme';
-import { Banner, Button, Card, Field, PickerField, Row, Screen, Table } from '../ui';
+import { Banner, Button, Card, Field, PickerField, RemoveLink, Row, Screen, Table } from '../ui';
 
 const modes = [
   { value: 'all', label: 'All finalized' },
@@ -20,6 +21,7 @@ export function HistoryScreen({ onBack, onOpen, role }) {
   const [to, setTo] = useState(todayIso());
   const [rows, setRows] = useState([]);
   const [error, setError] = useState('');
+  const { can } = useAccess();
 
   async function search() {
     setError('');
@@ -54,6 +56,16 @@ export function HistoryScreen({ onBack, onOpen, role }) {
           { key: 'location', label: 'Location' },
           { key: 'date', label: 'Date' },
           { key: 'total_amount', label: 'Amount', render: (row) => money(row.total_amount) },
+          ...(can('history', 'delete') || can('clients', 'delete') ? [{
+            key: 'remove',
+            label: '',
+            render: (row) => <RemoveLink onPress={async () => {
+              try {
+                await api(`/api/clients/${row.doc_no}`, { method: 'DELETE' });
+                setRows((list) => list.filter((item) => item.doc_no !== row.doc_no));
+              } catch (e) { setError(e.message); }
+            }} />,
+          }] : []),
         ]}
         rows={rows}
         onPressRow={(row) => onOpen(row.doc_no)}

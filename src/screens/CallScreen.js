@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Text } from 'react-native';
 import { api } from '../api';
+import { useAccess } from '../access';
 import { colors } from '../theme';
-import { Banner, Button, Card, Field, PickerField, Row, Screen, Table } from '../ui';
+import { Banner, Button, Card, Field, PickerField, RemoveLink, Row, Screen, Table } from '../ui';
 
 export function CallScreen({ onBack, username }) {
   const [lookups, setLookups] = useState({ mobile: [], agent: [] });
@@ -11,6 +12,7 @@ export function CallScreen({ onBack, username }) {
   const [history, setHistory] = useState([]);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const { can } = useAccess();
 
   useEffect(() => {
     api('/api/lookups').then(setLookups).catch((e) => setError(e.message));
@@ -62,7 +64,7 @@ export function CallScreen({ onBack, username }) {
         </Row>
         <Field label="Comments" value={form.reason} onChangeText={(reason) => setForm({ ...form, reason })} multiline />
         <Row>
-          <Button title="Save call" onPress={save} />
+          {can('calls', 'create') ? <Button title="Save call" onPress={save} /> : null}
           <Button title="Load history" kind="ghost" onPress={() => loadHistory().catch((e) => setError(e.message))} />
         </Row>
         <Text style={{ color: colors.muted }}>Assigned lines for this login are listed first.</Text>
@@ -73,6 +75,17 @@ export function CallScreen({ onBack, username }) {
           { key: 'agent', label: 'Agent' },
           { key: 'agent_no', label: 'Line' },
           { key: 'reason', label: 'Comments', flex: 2 },
+          ...(can('calls', 'delete') ? [{
+            key: 'remove',
+            label: '',
+            render: (row) => <RemoveLink onPress={async () => {
+              try {
+                await api(`/api/calls/${row.id}`, { method: 'DELETE' });
+                setMessage('Call removed');
+                await loadHistory();
+              } catch (e) { setError(e.message); }
+            }} />,
+          }] : []),
         ]}
         rows={history}
         empty="No earlier calls for this contact."
@@ -89,6 +102,7 @@ export function AssignScreen({ onBack }) {
   const [toUser, setToUser] = useState('');
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const { can } = useAccess();
 
   async function reload() {
     const [list, lookup] = await Promise.all([api('/api/assignments'), api('/api/lookups')]);
@@ -113,24 +127,42 @@ export function AssignScreen({ onBack }) {
           <PickerField label="Mobile" value={mobileNo} options={mobiles} onChange={setMobileNo} />
         </Row>
         <Row>
-          <Button title="Add" onPress={async () => {
+          {can('assign', 'create') ? <Button title="Add" onPress={async () => {
             try {
               await api('/api/assignments', { method: 'POST', body: { userName, mobileNo } });
               setMessage('Number assigned');
               await reload();
             } catch (e) { setError(e.message); }
-          }} />
-          <Button title="Transfer all" kind="ghost" onPress={async () => {
+          }} /> : null}
+          {can('assign', 'update') ? <Button title="Transfer all" kind="ghost" onPress={async () => {
             try {
               await api('/api/assignments/transfer', { method: 'POST', body: { fromUser: userName, toUser } });
               setMessage(`Moved ${userName} lines to ${toUser}`);
               await reload();
             } catch (e) { setError(e.message); }
-          }} />
+          }} /> : null}
         </Row>
         <PickerField label="Transfer to" value={toUser} options={agents} onChange={setToUser} />
       </Card>
-      <Table columns={[{ key: 'user_name', label: 'Agent' }, { key: 'mobile_no', label: 'Mobile' }, { key: 'date', label: 'Date' }]} rows={rows} />
+      <Table
+        columns={[
+          { key: 'user_name', label: 'Agent' },
+          { key: 'mobile_no', label: 'Mobile' },
+          { key: 'date', label: 'Date' },
+          ...(can('assign', 'delete') ? [{
+            key: 'remove',
+            label: '',
+            render: (row) => <RemoveLink onPress={async () => {
+              try {
+                await api(`/api/assignments/${row.id}`, { method: 'DELETE' });
+                setMessage('Number removed');
+                await reload();
+              } catch (e) { setError(e.message); }
+            }} />,
+          }] : []),
+        ]}
+        rows={rows}
+      />
     </Screen>
   );
 }

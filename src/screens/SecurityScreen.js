@@ -14,6 +14,7 @@ const ROLE_COLOR = {
 
 export function AclScreen({ onBack }) {
   const [catalog, setCatalog] = useState([]);
+  const [actions, setActions] = useState(['view', 'create', 'update', 'delete']);
   const [roles, setRoles] = useState({});
   const [role, setRole] = useState('CallCenter');
   const [error, setError] = useState('');
@@ -22,6 +23,7 @@ export function AclScreen({ onBack }) {
   useEffect(() => {
     api('/api/acl').then((data) => {
       setCatalog(data.permissions || []);
+      setActions(data.actions || ['view', 'create', 'update', 'delete']);
       setRoles(data.roles || {});
     }).catch((e) => setError(e.message));
   }, []);
@@ -37,7 +39,7 @@ export function AclScreen({ onBack }) {
   const groups = [...new Set(catalog.map((item) => item.group))];
 
   return (
-    <Screen title="Access Control" subtitle="JWT login still proves who the person is. This list decides which screens that role may open." onBack={onBack}>
+    <Screen title="Access Control" subtitle="Each role can be allowed to view, add, update, or remove records. Removing a record hides it. Photos and documents are the only files erased for good." onBack={onBack}>
       <Banner text={error} />
       <Banner text={message} kind="ok" />
       <Card>
@@ -54,17 +56,22 @@ export function AclScreen({ onBack }) {
       {groups.map((group) => (
         <Card key={group}>
           <Heading>{group}</Heading>
-          {catalog.filter((item) => item.group === group).map((item) => {
-            const on = (roles[role] || []).includes(item.key);
-            return (
-              <Pressable key={item.key} onPress={() => toggle(item.key)} style={styles.checkRow}>
-                <View style={[styles.box, on && { backgroundColor: ROLE_COLOR[role] || colors.gold, borderColor: ROLE_COLOR[role] || colors.gold }]}>
-                  <Text style={styles.tick}>{on ? '✓' : ''}</Text>
-                </View>
-                <Text style={styles.checkLabel}>{item.label}</Text>
-              </Pressable>
-            );
-          })}
+          {catalog.filter((item) => item.group === group).map((item) => (
+            <View key={item.key} style={styles.permRow}>
+              <Text style={styles.checkLabel}>{item.label}</Text>
+              <View style={styles.actions}>
+                {actions.map((action) => {
+                  const key = `${item.key}:${action}`;
+                  const on = (roles[role] || []).includes(key);
+                  return (
+                    <Pressable key={action} onPress={() => toggle(key)} style={[styles.action, on && { backgroundColor: ROLE_COLOR[role] || colors.gold, borderColor: ROLE_COLOR[role] || colors.gold }]}>
+                      <Text style={[styles.actionText, on && styles.roleTextOn]}>{action}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          ))}
         </Card>
       ))}
       <Button title="Save access list" onPress={async () => {
@@ -148,7 +155,11 @@ const styles = StyleSheet.create({
   checkRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8 },
   box: { width: 26, height: 26, borderRadius: 8, borderWidth: 2, borderColor: colors.line, alignItems: 'center', justifyContent: 'center' },
   tick: { color: colors.ink, fontWeight: '900' },
-  checkLabel: { color: colors.text, fontSize: 16, fontWeight: '700' },
+  checkLabel: { color: colors.text, fontSize: 16, fontWeight: '700', minWidth: 140 },
+  permRow: { paddingVertical: 8, gap: 8 },
+  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  action: { borderRadius: 999, borderWidth: 1, borderColor: colors.line, paddingVertical: 6, paddingHorizontal: 10, backgroundColor: colors.input },
+  actionText: { color: colors.text, fontWeight: '800', fontSize: 12, textTransform: 'capitalize' },
   pill: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 },
   pillText: { color: '#fff', fontWeight: '800', fontSize: 12 },
 });

@@ -1,8 +1,9 @@
 import { createElement, useEffect, useState } from 'react';
 import { Platform, Text } from 'react-native';
 import { api, apiBlob } from '../api';
+import { useAccess } from '../access';
 import { colors, money, todayIso } from '../theme';
-import { Banner, Button, Card, Field, Row, Screen, Table } from '../ui';
+import { Banner, Button, Card, Field, RemoveLink, Row, Screen, Table } from '../ui';
 
 export function ApprovalsScreen({ onBack, role }) {
   const [date, setDate] = useState(todayIso());
@@ -11,6 +12,7 @@ export function ApprovalsScreen({ onBack, role }) {
   const [detail, setDetail] = useState(null);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const { can } = useAccess();
 
   async function load() {
     setError('');
@@ -100,7 +102,7 @@ export function ApprovalsScreen({ onBack, role }) {
               setMessage(`Approval PDF opened for ${detail.finalized.job_no}`);
             } catch (e) { setError(e.message); }
           }} />
-          {!detail.finalized.approved ? (
+          {!detail.finalized.approved && can('approvals', 'update') ? (
             <Button title="Approve" kind="ok" onPress={async () => {
               try {
                 await api(`/api/approvals/${detail.finalized.job_no}/approve`, { method: 'POST', body: {} });
@@ -109,7 +111,8 @@ export function ApprovalsScreen({ onBack, role }) {
                 await load();
               } catch (e) { setError(e.message); }
             }} />
-          ) : <Text style={{ color: colors.ok }}>Approved</Text>}
+          ) : null}
+          {detail.finalized.approved ? <Text style={{ color: colors.ok }}>Approved</Text> : null}
         </Card>
       ) : null}
     </Screen>
@@ -121,6 +124,7 @@ export function CommissionScreen({ onBack }) {
   const [riderCommission, setRider] = useState('');
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const { can } = useAccess();
 
   useEffect(() => {
     api('/api/commission').then((data) => {
@@ -136,12 +140,12 @@ export function CommissionScreen({ onBack }) {
       <Card>
         <Field label="Business commission per job" value={businessCommission} onChangeText={setBusiness} keyboardType="decimal-pad" />
         <Field label="Rider commission per job" value={riderCommission} onChangeText={setRider} keyboardType="decimal-pad" />
-        <Button title="Save" onPress={async () => {
+        {can('commission', 'update') ? <Button title="Save" onPress={async () => {
           try {
             await api('/api/commission', { method: 'PUT', body: { businessCommission, riderCommission } });
             setMessage('Commission rates saved');
           } catch (e) { setError(e.message); }
-        }} />
+        }} /> : null}
       </Card>
     </Screen>
   );
@@ -153,6 +157,7 @@ export function AccessScreen({ onBack }) {
   const [rows, setRows] = useState([]);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const { can } = useAccess();
 
   async function reload() {
     setRows(await api('/api/access-codes'));
@@ -171,16 +176,34 @@ export function AccessScreen({ onBack }) {
           <Field label="Date" value={date} onChangeText={setDate} />
           <Field label="Code" value={code} onChangeText={setCode} placeholder="ABC123" />
         </Row>
-        <Button title="Save code" onPress={async () => {
+        {can('access', 'create') ? <Button title="Save code" onPress={async () => {
           try {
             const saved = await api('/api/access-codes', { method: 'POST', body: { date, code } });
             setMessage(`Saved ${saved.code} for ${saved.date}`);
             setCode('');
             await reload();
           } catch (e) { setError(e.message); }
-        }} />
+        }} /> : null}
       </Card>
-      <Table columns={[{ key: 'date', label: 'Date' }, { key: 'code', label: 'Code' }, { key: 'created_by', label: 'By' }]} rows={rows} />
+      <Table
+        columns={[
+          { key: 'date', label: 'Date' },
+          { key: 'code', label: 'Code' },
+          { key: 'created_by', label: 'By' },
+          ...(can('access', 'delete') ? [{
+            key: 'remove',
+            label: '',
+            render: (row) => <RemoveLink onPress={async () => {
+              try {
+                await api(`/api/access-codes/${row.id}`, { method: 'DELETE' });
+                setMessage('Code removed');
+                await reload();
+              } catch (e) { setError(e.message); }
+            }} />,
+          }] : []),
+        ]}
+        rows={rows}
+      />
     </Screen>
   );
 }

@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { api, clearSession, loadSession, saveSession } from './src/api';
 import { menuFor } from './src/menu';
+import { AccessProvider } from './src/access';
 import { colors, font, money } from './src/theme';
 import { Banner, Button, Card, Field } from './src/ui';
 import { AssignScreen, CallScreen } from './src/screens/CallScreen';
@@ -26,6 +27,15 @@ export default function App() {
   const wide = width >= 980;
 
   useEffect(() => {
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      let meta = document.querySelector('meta[name="viewport"]');
+      if (!meta) {
+        meta = document.createElement('meta');
+        meta.setAttribute('name', 'viewport');
+        document.head.appendChild(meta);
+      }
+      meta.setAttribute('content', 'width=device-width, initial-scale=1, viewport-fit=cover');
+    }
     loadSession().then(async (saved) => {
       if (saved?.token) {
         try {
@@ -84,6 +94,7 @@ export default function App() {
               />
             ) : null}
             {menuOpen && !wide ? <Pressable style={styles.backdrop} onPress={() => setMenuOpen(false)} /> : null}
+            <AccessProvider role={session.user.group} permissions={session.permissions}>
             <View style={styles.main}>
               {!wide ? (
                 <View>
@@ -119,6 +130,7 @@ export default function App() {
               {page === 'commission' ? <CommissionScreen onBack={() => open('home')} /> : null}
               {page === 'access' ? <AccessScreen onBack={() => open('home')} /> : null}
             </View>
+            </AccessProvider>
           </View>
         )}
       </SafeAreaView>
@@ -127,8 +139,8 @@ export default function App() {
 }
 
 function Login({ onSuccess }) {
-  const [username, setUsername] = useState('sadmin');
-  const [password, setPassword] = useState('admin123');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -159,17 +171,16 @@ function Login({ onSuccess }) {
         <Text style={styles.brand}>Gold Store</Text>
         <Text style={styles.tag}>Calls, client jobs, cashier payouts, and accounts. Sign in with your desk login.</Text>
         <Banner text={error} />
-        <Field label="Username" value={username} onChangeText={setUsername} />
-        <Field label="Password" value={password} onChangeText={setPassword} secureTextEntry />
+        <Field label="Username" value={username} onChangeText={setUsername} autoComplete="off" />
+        <Field label="Password" value={password} onChangeText={setPassword} secureTextEntry autoComplete="off" />
         <Button title={busy ? 'Signing in…' : 'Sign in'} onPress={submit} disabled={busy} />
-        <Text style={styles.hint}>Demo: sadmin / admin123 · cashier / cashier123 · call / call123</Text>
       </View>
     </View>
   );
 }
 
 function Sidebar({ session, current, onOpen, onLogout, overlay }) {
-  const items = menuFor(session.user.group);
+  const items = menuFor(session.user.group, session.permissions);
   const groups = [...new Set(items.map((item) => item.group))];
   return (
     <View style={[styles.side, overlay && styles.sideOverlay]}>
@@ -217,7 +228,7 @@ function Home({ session, onOpen }) {
   useEffect(() => {
     api('/api/dashboard').then(setStats).catch((e) => setError(e.message));
   }, []);
-  const items = menuFor(session.user.group);
+  const items = menuFor(session.user.group, session.permissions);
   const can = (key) => items.some((item) => item.key === key);
   const metrics = stats ? [
     { label: 'Pending jobs', value: String(stats.pending), note: 'Waiting for the cashier', color: colors.amber, key: can('clients') ? 'clients' : 'home' },
