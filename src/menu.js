@@ -1,6 +1,6 @@
 export const MENU = [
   { key: 'calls', title: 'Call Log', hint: 'Log customer calls', group: 'Call Center', roles: ['CallCenter'] },
-  { key: 'clients', title: 'Client Details', hint: 'Open a gold buying job', group: 'Call Center', roles: ['CallCenter'] },
+  { key: 'clients', title: 'Client Details', hint: 'Open a gold buying job', group: 'Call Center', roles: ['CallCenter', 'Rider', 'Cashier', 'Admin'] },
   { key: 'assign', title: 'Assign Numbers', hint: 'Outbound lines for agents', group: 'Call Center', roles: ['CallCenter'] },
   { key: 'cashier', title: 'Cashier', hint: 'Pay and finalize a job', group: 'Cashier', roles: ['Cashier', 'Account'] },
   { key: 'history', title: 'Past Records', hint: 'Search finalized jobs', group: 'Records', roles: ['CallCenter', 'Cashier', 'History', 'Account', 'Admin'] },

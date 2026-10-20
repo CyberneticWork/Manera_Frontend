@@ -41,7 +41,7 @@ export function ClientScreen({ onBack, docNo, readOnly }) {
   const [uploading, setUploading] = useState('');
   const [storageReady, setStorageReady] = useState(true);
   const screenRef = useRef(null);
-  const { can } = useAccess();
+  const { can, role } = useAccess();
   const canChange = form.docNo ? (can('clients', 'update') || can('cashier', 'update')) : can('clients', 'create');
   const canRemove = can('clients', 'delete') || can('cashier', 'delete');
   const { phone } = useLayout();
@@ -333,13 +333,14 @@ export function ClientScreen({ onBack, docNo, readOnly }) {
       </Card>
 
       <Card>
-        <Heading>Pending jobs</Heading>
+        <Heading>{role === 'Rider' ? 'Your pending jobs' : 'Pending jobs'}</Heading>
       <Table
         columns={[
           { key: 'name', label: 'Customer' },
           { key: 'doc_no', label: 'Job' },
           { key: 'mobile_no', label: 'Mobile' },
           { key: 'agent_name', label: 'Agent' },
+          { key: 'rider_name', label: 'Rider' },
           { key: 'total_amount', label: 'Amount', render: (row) => money(row.total_amount) },
           ...(canRemove ? [{
             key: 'remove',

@@ -10,6 +10,7 @@ export function AccessProvider({ role, permissions, children }) {
 export function useAccess() {
   const { role, permissions } = useContext(AccessContext);
   return {
+    role,
     can: (screen, action) => canDo(role, permissions, screen, action),
   };
 }

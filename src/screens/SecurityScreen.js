@@ -10,6 +10,7 @@ const ROLE_COLOR = {
   History: colors.blue,
   Account: colors.violet,
   Admin: colors.green,
+  Rider: colors.rose,
 };
 
 export function AclScreen({ onBack }) {

@@ -81,6 +81,8 @@ export function MastersScreen({ onBack }) {
   );
 }
 
+const userRoles = ['SAdmin', 'Admin', 'Cashier', 'CallCenter', 'History', 'Account', 'Rider'];
+
 export function UsersScreen({ onBack }) {
   const [rows, setRows] = useState([]);
   const [form, setForm] = useState({ username: '', password: '', title: '', group: 'Cashier' });
@@ -97,7 +99,7 @@ export function UsersScreen({ onBack }) {
   }, []);
 
   return (
-    <Screen title="Users" subtitle="Each person gets one role. Access Control decides which screens that role can open after JWT login." onBack={onBack}>
+    <Screen title="Users" subtitle="Assign a role to authorize each login. A rider's title must match the rider name on the job, and that person then sees only those pending jobs." onBack={onBack}>
       <Banner text={error} />
       <Banner text={message} kind="ok" />
       <Card>
@@ -106,9 +108,9 @@ export function UsersScreen({ onBack }) {
           <Field label="Password" value={form.password} onChangeText={(password) => setForm({ ...form, password })} secureTextEntry />
           <Field label="Title" value={form.title} onChangeText={(title) => setForm({ ...form, title })} />
           <PickerField
-            label="Category"
+            label="Role"
             value={form.group}
-            options={['SAdmin', 'Admin', 'Cashier', 'CallCenter', 'History', 'Account'].map((value) => ({ value, label: value }))}
+            options={userRoles.map((value) => ({ value, label: value }))}
             onChange={(group) => setForm({ ...form, group })}
           />
         </Row>
@@ -125,7 +127,25 @@ export function UsersScreen({ onBack }) {
         columns={[
           { key: 'username', label: 'User' },
           { key: 'title', label: 'Title' },
-          { key: 'group_code', label: 'Role' },
+          {
+            key: 'group_code',
+            label: 'Role',
+            flex: 1.4,
+            render: (row) => (can('users', 'update') ? (
+              <PickerField
+                label="Role"
+                value={row.group_code}
+                options={userRoles.map((value) => ({ value, label: value }))}
+                onChange={async (group) => {
+                  try {
+                    await api(`/api/users/${row.id}`, { method: 'PUT', body: { group } });
+                    setMessage(`${row.username} authorized as ${group}`);
+                    await reload();
+                  } catch (e) { setError(e.message); }
+                }}
+              />
+            ) : row.group_code),
+          },
           { key: 'active', label: 'Active', render: (row) => (row.active ? 'Yes' : 'No') },
           ...(can('users', 'delete') ? [{
             key: 'remove',
