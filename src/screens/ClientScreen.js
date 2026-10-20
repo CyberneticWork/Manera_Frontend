@@ -41,7 +41,7 @@ export function ClientScreen({ onBack, docNo, readOnly }) {
   const [uploading, setUploading] = useState('');
   const [storageReady, setStorageReady] = useState(true);
   const screenRef = useRef(null);
-  const { can, role } = useAccess();
+  const { can, role, title, username } = useAccess();
   const canChange = form.docNo ? (can('clients', 'update') || can('cashier', 'update')) : can('clients', 'create');
   const canRemove = can('clients', 'delete') || can('cashier', 'delete');
   const { phone } = useLayout();
@@ -95,6 +95,23 @@ export function ClientScreen({ onBack, docNo, readOnly }) {
   }, [docNo]);
 
   const opts = (type) => (lookups[type] || []).map((row) => ({ value: row.description, label: row.description }));
+  const ownRiderName = () => {
+    const riders = lookups.rider || [];
+    const match = (value) => riders.find((row) => String(row.description || '').trim().toLowerCase() === String(value || '').trim().toLowerCase());
+    if (title && match(title)) return match(title).description;
+    if (username && match(username)) return match(username).description;
+    return String(title || username || '').trim();
+  };
+  const riderOptions = role === 'Rider'
+    ? (ownRiderName() ? [{ value: ownRiderName(), label: ownRiderName() }] : [])
+    : opts('rider');
+
+  useEffect(() => {
+    if (role !== 'Rider') return;
+    const name = ownRiderName();
+    if (!name) return;
+    setForm((current) => (current.docNo || current.riderName ? current : { ...current, riderName: name }));
+  }, [role, title, username, lookups]);
   const itemsForCategory = (lookups.item || [])
     .filter((row) => !draft.category || row.category === draft.category)
     .map((row) => ({ value: row.description, label: row.description }));
@@ -256,7 +273,7 @@ export function ClientScreen({ onBack, docNo, readOnly }) {
         <Row>
           <PickerField label="Agent" value={form.agentName} options={opts('agent')} onChange={(v) => set('agentName', v)} />
           <Field label="Agent commission" value={form.agentCommission} onChangeText={(v) => set('agentCommission', v)} keyboardType="decimal-pad" />
-          <PickerField label="Rider" value={form.riderName} options={opts('rider')} onChange={(v) => set('riderName', v)} />
+          <PickerField label="Rider" value={form.riderName} options={riderOptions} onChange={(v) => set('riderName', v)} />
           <Field label="Rider commission" value={form.riderCommission} onChangeText={(v) => set('riderCommission', v)} keyboardType="decimal-pad" />
         </Row>
         <Row>

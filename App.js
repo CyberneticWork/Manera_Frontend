@@ -110,7 +110,7 @@ export default function App() {
               />
             ) : null}
             {menuOpen && !wide ? <Pressable style={styles.backdrop} onPress={() => setMenuOpen(false)} /> : null}
-            <AccessProvider role={session.user.group} permissions={session.permissions}>
+            <AccessProvider role={session.user.group} permissions={session.permissions} title={session.user.title} username={session.user.username}>
             <View style={styles.main}>
               {!wide ? (
                 <View>

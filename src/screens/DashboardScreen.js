@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Animated, Image, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../api';
 import { menuFor } from '../menu';
 import { colors, font, money } from '../theme';
@@ -27,6 +28,52 @@ const SLICE_COLOR = {
 };
 
 const PALETTE = [colors.gold, colors.teal, colors.blue, colors.violet, colors.coral, colors.rose, colors.green, colors.lime];
+const HEARD_KEY = 'goldstore.heardClients';
+
+let audioCtx = null;
+
+function ensureAudio() {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return null;
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if (!Ctx) return null;
+  if (!audioCtx) audioCtx = new Ctx();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+function playChime() {
+  const ctx = ensureAudio();
+  if (!ctx) return;
+  const start = ctx.currentTime + 0.02;
+  [523.25, 659.25, 783.99].forEach((freq, index) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    const when = start + index * 0.11;
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, when);
+    gain.gain.setValueAtTime(0.0001, when);
+    gain.gain.exponentialRampToValueAtTime(0.15, when + 0.03);
+    gain.gain.exponentialRampToValueAtTime(0.0001, when + 0.46);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(when);
+    osc.stop(when + 0.48);
+  });
+}
+
+async function readHeard() {
+  try {
+    const raw = await AsyncStorage.getItem(HEARD_KEY);
+    const ids = raw ? JSON.parse(raw) : null;
+    return Array.isArray(ids) ? ids : null;
+  } catch {
+    return null;
+  }
+}
+
+async function writeHeard(ids) {
+  await AsyncStorage.setItem(HEARD_KEY, JSON.stringify(ids.slice(-200)));
+}
 
 function grams(value) {
   const n = Number(value) || 0;
@@ -158,16 +205,71 @@ function ShareBars({ title, subtitle, rows, empty }) {
   );
 }
 
+function dismissAlert(docNo, setAlerts) {
+  setAlerts((current) => current.filter((row) => row.doc_no !== docNo));
+}
+
 export function DashboardScreen({ session, onOpen }) {
   const [stats, setStats] = useState(null);
   const [error, setError] = useState('');
+  const [alerts, setAlerts] = useState([]);
   const { width } = useWindowDimensions();
   const phone = width < 720;
   const cols = width < 520 ? 1 : width < 980 ? 2 : 3;
   const chartCols = width < 860 ? 1 : 3;
 
   useEffect(() => {
-    api('/api/dashboard').then(setStats).catch((e) => setError(e.message));
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return undefined;
+    const unlock = () => ensureAudio();
+    window.addEventListener('pointerdown', unlock);
+    return () => window.removeEventListener('pointerdown', unlock);
+  }, []);
+
+  useEffect(() => {
+    let stop = false;
+    let running = false;
+    const timers = [];
+    async function tick() {
+      if (running) return;
+      running = true;
+      try {
+        const data = await api('/api/dashboard');
+        if (stop) return;
+        setStats(data);
+        setError('');
+        const arrivals = data.arrivals || [];
+        const heard = await readHeard();
+        const ids = arrivals.map((row) => String(row.doc_no));
+        if (!heard) {
+          await writeHeard(ids);
+          return;
+        }
+        const known = new Set(heard);
+        const fresh = arrivals.filter((row) => !known.has(String(row.doc_no)));
+        if (!fresh.length) return;
+        await writeHeard([...heard, ...fresh.map((row) => String(row.doc_no))]);
+        if (stop) return;
+        playChime();
+        setAlerts((current) => [...fresh, ...current].slice(0, 3));
+        fresh.forEach((row) => {
+          const timer = setTimeout(() => {
+            if (!stop) dismissAlert(row.doc_no, setAlerts);
+          }, 18000);
+          timers.push(timer);
+        });
+      } catch (e) {
+        if (!stop) setError(e.message);
+      } finally {
+        running = false;
+      }
+    }
+    tick();
+    const poll = setInterval(tick, 5000);
+    return () => {
+      stop = true;
+      clearInterval(poll);
+      timers.forEach(clearTimeout);
+    };
   }, []);
 
   const items = menuFor(session.user.group, session.permissions);
@@ -193,6 +295,7 @@ export function DashboardScreen({ session, onOpen }) {
   const placeTitle = stats?.places?.length ? 'Bought this month by place' : 'Open jobs by place';
 
   return (
+    <View style={styles.desk}>
     <ScrollView contentContainerStyle={[styles.home, phone && styles.homePhone]}>
       <View style={styles.ribbon}>
         {[colors.gold, colors.teal, colors.coral, colors.violet, colors.green, colors.blue].map((color) => (
@@ -345,7 +448,44 @@ export function DashboardScreen({ session, onOpen }) {
         ))}
       </View>
     </ScrollView>
+    {alerts.length ? (
+      <View style={[styles.toastStack, phone && styles.toastStackPhone]} pointerEvents="box-none">
+        {alerts.map((row) => (
+          <View key={row.doc_no} style={styles.toast}>
+            <Pressable style={styles.toastBody} onPress={() => { dismissAlert(row.doc_no, setAlerts); onOpen('clients', row.doc_no); }}>
+              <View style={styles.toastHead}>
+                <Pulse />
+                <Text style={styles.toastKicker}>New client</Text>
+              </View>
+              <Text style={styles.toastName} numberOfLines={1}>{row.name || row.nic || 'New job'}</Text>
+              <Text style={styles.toastMeta} numberOfLines={2}>
+                {[row.job_type, row.location, row.rider_name ? `Rider ${row.rider_name}` : ''].filter(Boolean).join(' · ') || 'Just added'}
+              </Text>
+              <Text style={styles.toastMoney}>{money(row.total_amount)}</Text>
+              {row.created_by ? <Text style={styles.toastMeta}>Added by {row.created_by}</Text> : null}
+            </Pressable>
+            <Pressable style={styles.toastClose} onPress={() => dismissAlert(row.doc_no, setAlerts)} accessibilityRole="button">
+              <Text style={styles.toastCloseText}>Close</Text>
+            </Pressable>
+          </View>
+        ))}
+      </View>
+    ) : null}
+    </View>
   );
+}
+
+function Pulse() {
+  const opacity = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    const loop = Animated.loop(Animated.sequence([
+      Animated.timing(opacity, { toValue: 0.2, duration: 650, useNativeDriver: false }),
+      Animated.timing(opacity, { toValue: 1, duration: 650, useNativeDriver: false }),
+    ]));
+    loop.start();
+    return () => loop.stop();
+  }, [opacity]);
+  return <Animated.View style={[styles.pulse, { opacity }]} />;
 }
 
 function Chip({ label, value }) {
@@ -358,6 +498,7 @@ function Chip({ label, value }) {
 }
 
 const styles = StyleSheet.create({
+  desk: { flex: 1 },
   home: { padding: 22, paddingBottom: 48, width: '100%', maxWidth: 1180, alignSelf: 'center' },
   homePhone: { padding: 12, paddingBottom: 36 },
   ribbon: { flexDirection: 'row', height: 6, borderRadius: 99, overflow: 'hidden', marginBottom: 16 },
@@ -431,4 +572,27 @@ const styles = StyleSheet.create({
   tileBar: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 5 },
   tileGroup: { color: colors.muted, fontSize: 11, fontWeight: '800', letterSpacing: 0.6, textTransform: 'uppercase', marginLeft: 6 },
   tileTitle: { color: colors.text, fontWeight: '800', fontSize: 16, marginLeft: 6 },
+  toastStack: { position: 'absolute', bottom: 16, right: 16, width: 340, gap: 10, zIndex: 30 },
+  toastStackPhone: { left: 12, right: 12, width: undefined, bottom: 12 },
+  toast: {
+    backgroundColor: '#1c1738',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.gold,
+    padding: 14,
+    gap: 4,
+    shadowColor: colors.gold,
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  toastBody: { gap: 2, paddingRight: 64 },
+  toastHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  pulse: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.gold },
+  toastKicker: { color: colors.gold, fontSize: 11, fontWeight: '800', letterSpacing: 1.2, textTransform: 'uppercase' },
+  toastName: { color: colors.text, fontFamily: font.title, fontSize: 22, fontWeight: '700', marginTop: 4 },
+  toastMeta: { color: colors.muted, fontSize: 13, lineHeight: 18 },
+  toastMoney: { color: colors.gold, fontWeight: '800', fontSize: 16, marginTop: 4 },
+  toastClose: { position: 'absolute', top: 10, right: 10, minHeight: 36, justifyContent: 'center', paddingHorizontal: 8 },
+  toastCloseText: { color: colors.text, fontWeight: '800', fontSize: 12 },
 });
