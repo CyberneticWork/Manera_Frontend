@@ -260,7 +260,7 @@ export function ClientScreen({ onBack, docNo, readOnly }) {
           <Field label="Rider commission" value={form.riderCommission} onChangeText={(v) => set('riderCommission', v)} keyboardType="decimal-pad" />
         </Row>
         <Row>
-          <Field label="Buddy" value={form.buddy} onChangeText={(v) => set('buddy', v)} />
+          <PickerField label="Buddy" value={form.buddy} options={opts('rider')} onChange={(v) => set('buddy', v)} />
           <Field label="Answered" value={form.answered} onChangeText={(v) => set('answered', v)} />
           <Field label="Total amount" value={form.totalAmount} onChangeText={(v) => set('totalAmount', v)} keyboardType="decimal-pad" />
         </Row>

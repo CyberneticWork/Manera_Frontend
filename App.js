@@ -5,8 +5,9 @@ import { StatusBar } from 'expo-status-bar';
 import { api, clearSession, loadSession, saveSession } from './src/api';
 import { menuFor } from './src/menu';
 import { AccessProvider } from './src/access';
-import { colors, font, money } from './src/theme';
-import { Banner, Button, Card, Field } from './src/ui';
+import { colors, font } from './src/theme';
+import { Banner, Button, Field } from './src/ui';
+import { DashboardScreen } from './src/screens/DashboardScreen';
 import { AssignScreen, CallScreen } from './src/screens/CallScreen';
 import { ClientScreen } from './src/screens/ClientScreen';
 import { CashierScreen } from './src/screens/CashierScreen';
@@ -127,7 +128,7 @@ export default function App() {
                   </View>
                 </View>
               ) : null}
-              {page === 'home' ? <Home session={session} onOpen={open} /> : null}
+              {page === 'home' ? <DashboardScreen session={session} onOpen={open} /> : null}
               {page === 'calls' ? <CallScreen username={session.user.username} onBack={() => open('home')} /> : null}
               {page === 'assign' ? <AssignScreen onBack={() => open('home')} /> : null}
               {page === 'clients' ? <ClientScreen docNo={docNo} readOnly={session.user.group === 'History'} onBack={() => open('home')} /> : null}
@@ -234,98 +235,6 @@ const GROUP_COLOR = {
   Manager: colors.green,
 };
 
-function Home({ session, onOpen }) {
-  const [stats, setStats] = useState(null);
-  const [error, setError] = useState('');
-  const { width } = useWindowDimensions();
-  const phone = width < 720;
-  const cols = width < 520 ? 1 : width < 980 ? 2 : 4;
-  useEffect(() => {
-    api('/api/dashboard').then(setStats).catch((e) => setError(e.message));
-  }, []);
-  const items = menuFor(session.user.group, session.permissions);
-  const can = (key) => items.some((item) => item.key === key);
-  const metrics = stats ? [
-    { label: 'Pending jobs', value: String(stats.pending), note: 'Waiting for the cashier', color: colors.amber, key: can('clients') ? 'clients' : 'home' },
-    { label: 'Finalized today', value: String(stats.finalizedToday), note: `${money(stats.weightToday)} g bought`, color: colors.teal, key: can('history') ? 'history' : 'home' },
-    { label: 'Need approval', value: String(stats.unapproved), note: 'Manager review', color: colors.coral, key: can('approvals') ? 'approvals' : 'history' },
-    { label: 'Cash paid today', value: money(stats.cashDebit), note: `In ${money(stats.cashCredit)}`, color: colors.green, key: can('cashier') ? 'cashier' : 'home' },
-  ] : [];
-  return (
-    <ScrollView contentContainerStyle={[styles.home, phone && styles.homePhone]}>
-      <View style={[styles.hero, phone && styles.heroPhone]}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.eyebrow}>Management desk</Text>
-          <Text style={[styles.hello, phone && styles.helloPhone]}>{session.user.title || session.user.username}</Text>
-          <Text style={styles.tag}>{session.company?.name || 'Gold Store'} · {session.user.group} · {stats?.date || ''}</Text>
-        </View>
-        {stats ? (
-          <View style={[styles.monthPill, phone && { alignSelf: 'flex-start' }]}>
-            <Text style={styles.monthLabel}>This month</Text>
-            <Text style={styles.monthValue}>{stats.monthJobs} {stats.monthJobs === 1 ? 'job' : 'jobs'}</Text>
-            <Text style={styles.monthMoney}>{money(stats.monthAmount)}</Text>
-          </View>
-        ) : null}
-      </View>
-      <Banner text={error} />
-      <View style={styles.metricWrap}>
-        {metrics.map((item) => (
-          <View key={item.label} style={{ width: `${100 / cols}%`, padding: 6 }}>
-            <Pressable onPress={() => onOpen(item.key)} style={[styles.metric, { backgroundColor: item.color }]}>
-              <Text style={styles.metricLabel}>{item.label}</Text>
-              <Text style={[styles.metricValue, phone && { fontSize: 22 }]} numberOfLines={1}>{item.value}</Text>
-              <Text style={styles.metricNote}>{item.note}</Text>
-            </Pressable>
-          </View>
-        ))}
-      </View>
-      {stats ? (
-        <View style={[styles.split, phone && styles.splitPhone]}>
-          <Card style={styles.panel}>
-            <Text style={styles.panelTitle}>Latest bought jobs</Text>
-            {!stats.recent?.length ? <Text style={styles.hint}>No finalized jobs yet.</Text> : null}
-            {(stats.recent || []).map((row) => (
-              <Pressable key={row.job_no} style={styles.line} onPress={() => onOpen('clients', row.doc_no)}>
-                <View style={[styles.dot, { backgroundColor: row.job_type === 'NR' ? colors.blue : colors.amber }]} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.lineTitle}>{row.job_no} · {row.job_type}</Text>
-                  <Text style={styles.hint}>{row.location || '—'} · {row.finalized_date}</Text>
-                </View>
-                <Text style={styles.lineMoney}>{money(row.amount)}</Text>
-              </Pressable>
-            ))}
-          </Card>
-          <Card style={styles.panel}>
-            <Text style={styles.panelTitle}>Waiting at the counter</Text>
-            {!stats.waiting?.length ? <Text style={styles.hint}>No pending client jobs.</Text> : null}
-            {(stats.waiting || []).map((row) => (
-              <Pressable key={row.doc_no} style={styles.line} onPress={() => onOpen('clients', row.doc_no)}>
-                <View style={[styles.dot, { backgroundColor: colors.teal }]} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.lineTitle}>{row.name || row.nic}</Text>
-                  <Text style={styles.hint}>{row.job_type} · {row.location || '—'} · Doc {row.doc_no}</Text>
-                </View>
-                <Text style={styles.lineMoney}>{money(row.total_amount)}</Text>
-              </Pressable>
-            ))}
-          </Card>
-        </View>
-      ) : null}
-      <Text style={[styles.panelTitle, { marginTop: 8 }]}>Open a screen</Text>
-      <View style={styles.tiles}>
-        {items.map((item) => (
-          <Pressable key={item.key} style={[styles.tile, phone && styles.tilePhone]} onPress={() => onOpen(item.key)}>
-            <View style={[styles.tileBar, { backgroundColor: GROUP_COLOR[item.group] || colors.gold }]} />
-            <Text style={styles.tileGroup}>{item.group}</Text>
-            <Text style={styles.tileTitle}>{item.title}</Text>
-            <Text style={[styles.hint, { marginLeft: 6 }]}>{item.hint}</Text>
-          </Pressable>
-        ))}
-      </View>
-    </ScrollView>
-  );
-}
-
 const styles = StyleSheet.create({
   app: { flex: 1, backgroundColor: colors.bg },
   shell: { flex: 1, minHeight: 0 },
@@ -343,7 +252,6 @@ const styles = StyleSheet.create({
   brand: { color: colors.text, fontSize: 36, fontFamily: font.title, fontWeight: '700' },
   brandSmall: { color: colors.text, fontSize: 26, fontFamily: font.title, fontWeight: '700' },
   tag: { color: colors.muted, marginBottom: 8, lineHeight: 20 },
-  hint: { color: colors.muted, fontSize: 12, lineHeight: 18 },
   loginWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20 },
   loginCard: {
     width: '100%',
@@ -383,44 +291,6 @@ const styles = StyleSheet.create({
   menuBtn: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 14, borderRadius: 12, backgroundColor: colors.amber },
   menuBtnText: { color: colors.ink, fontWeight: '800', fontSize: 13 },
   backdrop: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: 'rgba(6,8,12,0.55)', zIndex: 4 },
-  home: { padding: 28, paddingBottom: 48, gap: 8, width: '100%', maxWidth: 1080, alignSelf: 'center' },
-  homePhone: { padding: 14, paddingBottom: 36 },
-  hello: { color: colors.text, fontSize: 34, fontFamily: font.title, fontWeight: '700' },
-  helloPhone: { fontSize: 28 },
-  hero: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-end', gap: 12, marginBottom: 6 },
-  heroPhone: { flexDirection: 'column', alignItems: 'stretch' },
-  monthPill: { backgroundColor: '#2a2158', borderRadius: 16, paddingVertical: 12, paddingHorizontal: 16, minWidth: 150, borderWidth: 1, borderColor: colors.violet },
-  monthLabel: { color: '#d9d0ff', fontSize: 11, fontWeight: '800', letterSpacing: 0.6, textTransform: 'uppercase' },
-  monthValue: { color: colors.text, fontSize: 18, fontWeight: '800', marginTop: 4 },
-  monthMoney: { color: colors.gold, fontWeight: '700', marginTop: 2 },
-  metricWrap: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -6 },
-  metric: { padding: 14, borderRadius: 16, minHeight: 112, justifyContent: 'space-between' },
-  metricLabel: { color: 'rgba(255,255,255,0.88)', fontSize: 12, fontWeight: '800' },
-  metricValue: { color: '#fff', fontSize: 26, fontWeight: '800', marginTop: 8 },
-  metricNote: { color: 'rgba(255,255,255,0.82)', fontSize: 12, marginTop: 4 },
-  split: { flexDirection: 'row', gap: 12, marginTop: 8 },
-  splitPhone: { flexDirection: 'column' },
-  panel: { flex: 1, minWidth: 0 },
-  panelTitle: { color: colors.text, fontFamily: font.title, fontSize: 18, fontWeight: '700', marginBottom: 8 },
-  line: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderTopWidth: 1, borderTopColor: colors.line },
-  lineTitle: { color: colors.text, fontWeight: '700' },
-  lineMoney: { color: colors.gold, fontWeight: '800' },
-  dot: { width: 10, height: 10, borderRadius: 5 },
-  tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 4 },
-  tile: {
-    width: 220,
-    backgroundColor: colors.card,
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: colors.line,
-    gap: 4,
-    overflow: 'hidden',
-  },
-  tilePhone: { width: '100%' },
-  tileBar: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 5 },
-  tileGroup: { color: colors.muted, fontSize: 11, fontWeight: '800', letterSpacing: 0.6, textTransform: 'uppercase', marginLeft: 6 },
-  tileTitle: { color: colors.text, fontWeight: '800', fontSize: 16, marginLeft: 6 },
   sideOverlay: {
     position: 'absolute',
     top: 0,
