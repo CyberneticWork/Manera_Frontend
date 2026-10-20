@@ -35,6 +35,21 @@ export default function App() {
         document.head.appendChild(meta);
       }
       meta.setAttribute('content', 'width=device-width, initial-scale=1, viewport-fit=cover');
+      const apple = {
+        'apple-mobile-web-app-capable': 'yes',
+        'mobile-web-app-capable': 'yes',
+        'apple-mobile-web-app-status-bar-style': 'black-translucent',
+        'apple-mobile-web-app-title': 'Gold Store',
+      };
+      Object.entries(apple).forEach(([name, content]) => {
+        let tag = document.querySelector(`meta[name="${name}"]`);
+        if (!tag) {
+          tag = document.createElement('meta');
+          tag.setAttribute('name', name);
+          document.head.appendChild(tag);
+        }
+        tag.setAttribute('content', content);
+      });
     }
     loadSession().then(async (saved) => {
       if (saved?.token) {
