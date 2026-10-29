@@ -3,7 +3,22 @@ import { Platform } from 'react-native';
 
 const KEY = 'goldstore.session';
 
+function lanApiBase() {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return '';
+  const host = window.location.hostname;
+  const local = host === 'localhost'
+    || host === '127.0.0.1'
+    || host.startsWith('10.')
+    || host.startsWith('192.168.')
+    || /^172\.(1[6-9]|2\d|3[0-1])\./.test(host);
+  if (!local) return '';
+  if (window.location.port === '8081' || window.location.port === '19006') return `http://${host}:4000`;
+  return '';
+}
+
 export function apiBase() {
+  const lan = lanApiBase();
+  if (lan) return lan;
   if (process.env.EXPO_PUBLIC_API_URL) return process.env.EXPO_PUBLIC_API_URL.replace(/\/$/, '');
   if (Platform.OS === 'web' && typeof window !== 'undefined') return window.location.origin;
   return 'http://localhost:4000';

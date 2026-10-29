@@ -43,6 +43,7 @@ export function ClientScreen({ onBack, docNo, readOnly }) {
   const screenRef = useRef(null);
   const { can, role, title, username } = useAccess();
   const canChange = form.docNo ? (can('clients', 'update') || can('cashier', 'update')) : can('clients', 'create');
+  const canAddPhoto = Boolean(form.docNo) && (canChange || (role === 'Rider' && can('clients', 'view')));
   const canRemove = can('clients', 'delete') || can('cashier', 'delete');
   const { phone } = useLayout();
 
@@ -336,8 +337,8 @@ export function ClientScreen({ onBack, docNo, readOnly }) {
         {!storageReady ? <Text style={styles.photoEmpty}>Firebase is not connected yet. A super admin must open Firebase and save the storage account before photos can be kept.</Text> : null}
         <Row>
           <PickerField label="Image type" value={imageType} options={opts('imageType')} onChange={setImageType} />
-          {readOnly || !canChange ? null : <Button title={uploading === 'photo' ? 'Uploading…' : 'Camera'} onPress={() => addPhoto('camera')} disabled={Boolean(uploading)} />}
-          {readOnly || !canChange ? null : <Button title="Photo library" kind="ghost" onPress={() => addPhoto('library')} disabled={Boolean(uploading)} />}
+          {readOnly || !canAddPhoto ? null : <Button title={uploading === 'photo' ? 'Uploading…' : 'Camera'} onPress={() => addPhoto('camera')} disabled={Boolean(uploading)} />}
+          {readOnly || !canAddPhoto ? null : <Button title="Photo library" kind="ghost" onPress={() => addPhoto('library')} disabled={Boolean(uploading)} />}
         </Row>
         <View style={styles.photos}>
           {images.map((image) => (
