@@ -40,6 +40,17 @@ export async function clearSession() {
   await AsyncStorage.removeItem(KEY);
 }
 
+function appleBrowser() {
+  return Platform.OS === 'web'
+    && typeof navigator !== 'undefined'
+    && /iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+}
+
+function withToken(path, token) {
+  if (!token || path.includes('token=')) return path;
+  return `${path}${path.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`;
+}
+
 function cleanHeaders(headers) {
   const next = {};
   Object.entries(headers || {}).forEach(([key, value]) => {
@@ -92,18 +103,15 @@ async function send(url, { method = 'GET', body, headers, blob = false } = {}) {
     headers: cleanHeaders(headers),
     credentials: 'omit',
     mode: 'cors',
-    cache: 'no-store',
   };
   if (body != null) init.body = body;
-  // iPhone Safari tries HTTP/3 first and then reports that the server is down.
-  // The same call succeeds on the next attempt, which is what Android uses.
   let lastError;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       return await sendOnce(url, init, blob);
     } catch (error) {
       lastError = error;
-      if (attempt < 2) await delay(400 * (attempt + 1));
+      if (attempt < 1) await delay(300);
     }
   }
   throw lastError;
@@ -113,14 +121,33 @@ export async function api(path, options = {}) {
   const session = await loadSession();
   const headers = { ...(options.headers || {}) };
   const isForm = typeof FormData !== 'undefined' && options.body instanceof FormData;
-  if (!isForm && options.body && typeof options.body !== 'string') {
-    headers['Content-Type'] = 'application/json';
-    options = { ...options, body: JSON.stringify(options.body) };
+  let method = options.method || 'GET';
+  let body = options.body;
+  if (appleBrowser()) {
+    path = withToken(path, session?.token);
+    if (!isForm && body && typeof body === 'object') {
+      const payload = { ...body };
+      if (method !== 'GET' && method !== 'HEAD' && method !== 'POST') {
+        payload._method = method;
+        method = 'POST';
+      }
+      headers['Content-Type'] = 'text/plain';
+      body = JSON.stringify(payload);
+    } else if (!isForm && method !== 'GET' && method !== 'HEAD' && method !== 'POST') {
+      headers['Content-Type'] = 'text/plain';
+      body = JSON.stringify({ _method: method });
+      method = 'POST';
+    }
+  } else {
+    if (!isForm && body && typeof body !== 'string') {
+      headers['Content-Type'] = 'application/json';
+      body = JSON.stringify(body);
+    }
+    if (session?.token) headers.Authorization = `Bearer ${session.token}`;
   }
-  if (session?.token) headers.Authorization = `Bearer ${session.token}`;
   let response;
   try {
-    response = await send(`${apiBase()}${path}`, { method: options.method, body: options.body, headers });
+    response = await send(`${apiBase()}${path}`, { method, body, headers });
   } catch {
     throw new Error('Cannot reach the server. Start the API, then try again.');
   }
@@ -138,7 +165,8 @@ export async function api(path, options = {}) {
 export async function apiBlob(path) {
   const session = await loadSession();
   const headers = {};
-  if (session?.token) headers.Authorization = `Bearer ${session.token}`;
+  if (appleBrowser()) path = withToken(path, session?.token);
+  else if (session?.token) headers.Authorization = `Bearer ${session.token}`;
   let response;
   try {
     response = await send(`${apiBase()}${path}`, { headers, blob: true });
