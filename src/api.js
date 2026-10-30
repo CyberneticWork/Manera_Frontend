@@ -73,20 +73,40 @@ function xhrSend(url, { method, headers, body, blob }) {
   });
 }
 
-async function send(url, { method = 'GET', body, headers, blob = false } = {}) {
-  const init = {
-    method,
-    headers: cleanHeaders(headers),
-    credentials: 'omit',
-    mode: 'cors',
-  };
-  if (body != null) init.body = body;
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function sendOnce(url, init, blob) {
   try {
     return await fetch(url, init);
   } catch (error) {
     if (Platform.OS !== 'web' || typeof XMLHttpRequest === 'undefined') throw error;
     return xhrSend(url, { ...init, blob });
   }
+}
+
+async function send(url, { method = 'GET', body, headers, blob = false } = {}) {
+  const init = {
+    method,
+    headers: cleanHeaders(headers),
+    credentials: 'omit',
+    mode: 'cors',
+    cache: 'no-store',
+  };
+  if (body != null) init.body = body;
+  // iPhone Safari tries HTTP/3 first and then reports that the server is down.
+  // The same call succeeds on the next attempt, which is what Android uses.
+  let lastError;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await sendOnce(url, init, blob);
+    } catch (error) {
+      lastError = error;
+      if (attempt < 2) await delay(400 * (attempt + 1));
+    }
+  }
+  throw lastError;
 }
 
 export async function api(path, options = {}) {
