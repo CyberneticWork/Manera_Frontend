@@ -186,7 +186,7 @@ export function ClientScreen({ onBack, docNo, readOnly }) {
       const url = URL.createObjectURL(file);
       const image = document.createElement('img');
       image.onload = () => {
-        const maxEdge = 2000;
+        const maxEdge = 1280;
         const width = image.naturalWidth || image.width || 1;
         const height = image.naturalHeight || image.height || 1;
         const scale = Math.min(1, maxEdge / Math.max(width, height));
@@ -203,11 +203,11 @@ export function ClientScreen({ onBack, docNo, readOnly }) {
         canvas.toBlob((blob) => {
           URL.revokeObjectURL(url);
           if (!blob) {
-            resolve(file);
+            resolve(null);
             return;
           }
           resolve(new File([blob], `photo-${Date.now()}.jpg`, { type: 'image/jpeg' }));
-        }, 'image/jpeg', 0.85);
+        }, 'image/jpeg', 0.72);
       };
       image.onerror = () => {
         URL.revokeObjectURL(url);
@@ -228,10 +228,26 @@ export function ClientScreen({ onBack, docNo, readOnly }) {
       if (Platform.OS === 'web') {
         const picked = await chooseWebFile(source === 'camera');
         if (!picked) return;
-        const apple = typeof navigator !== 'undefined' && /iPhone|iPad|iPod/i.test(navigator.userAgent || '');
-        const file = apple ? await toJpegFile(picked) : picked;
-        const name = file.name && file.name !== 'image.jpg' ? file.name : `photo-${Date.now()}.jpg`;
-        data.append('image', file, name);
+        const file = await toJpegFile(picked);
+        if (!file) {
+          noteError('This photo could not be prepared. Try Photo library.');
+          return;
+        }
+        const imageBase64 = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => reject(new Error('Could not read the photo'));
+          reader.readAsDataURL(file);
+        });
+        setUploading('photo');
+        setError('');
+        await api(`/api/clients/${form.docNo}/images`, {
+          method: 'POST',
+          body: { type: imageType, name: file.name, contentType: 'image/jpeg', imageBase64 },
+        });
+        await openJob(form.docNo);
+        setMessage('Photo saved in Firebase');
+        return;
       } else if (source === 'camera') {
         const permission = await ImagePicker.requestCameraPermissionsAsync();
         if (!permission.granted) {
