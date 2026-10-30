@@ -3,17 +3,20 @@ import { Platform } from 'react-native';
 
 const KEY = 'goldstore.session';
 
-function lanApiBase() {
-  if (Platform.OS !== 'web' || typeof window === 'undefined') return '';
-  const host = window.location.hostname;
-  const local = host === 'localhost'
+function isLocalHost(host) {
+  return host === 'localhost'
     || host === '127.0.0.1'
     || host.startsWith('10.')
     || host.startsWith('192.168.')
     || /^172\.(1[6-9]|2\d|3[0-1])\./.test(host);
-  if (!local) return '';
-  if (window.location.port === '8081' || window.location.port === '19006') return `http://${host}:4000`;
-  return '';
+}
+
+function lanApiBase() {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return '';
+  // iPhone Safari loads the page, then blocks a second cleartext port.
+  // Stay on the address that already opened. The dev server forwards /api.
+  if (!isLocalHost(window.location.hostname)) return '';
+  return window.location.origin;
 }
 
 export function apiBase() {
@@ -37,6 +40,55 @@ export async function clearSession() {
   await AsyncStorage.removeItem(KEY);
 }
 
+function cleanHeaders(headers) {
+  const next = {};
+  Object.entries(headers || {}).forEach(([key, value]) => {
+    if (value != null && value !== '') next[key] = String(value);
+  });
+  return next;
+}
+
+function xhrSend(url, { method, headers, body, blob }) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(method || 'GET', url, true);
+    if (blob) xhr.responseType = 'blob';
+    Object.entries(headers || {}).forEach(([key, value]) => {
+      try { xhr.setRequestHeader(key, value); } catch { /* browser-managed header */ }
+    });
+    xhr.onload = () => {
+      resolve({
+        ok: xhr.status >= 200 && xhr.status < 300,
+        status: xhr.status,
+        text: async () => {
+          if (!blob) return xhr.responseText;
+          if (xhr.response && typeof xhr.response.text === 'function') return xhr.response.text();
+          return '';
+        },
+        blob: async () => xhr.response,
+      });
+    };
+    xhr.onerror = () => reject(new Error('network'));
+    xhr.send(body == null ? null : body);
+  });
+}
+
+async function send(url, { method = 'GET', body, headers, blob = false } = {}) {
+  const init = {
+    method,
+    headers: cleanHeaders(headers),
+    credentials: 'omit',
+    mode: 'cors',
+  };
+  if (body != null) init.body = body;
+  try {
+    return await fetch(url, init);
+  } catch (error) {
+    if (Platform.OS !== 'web' || typeof XMLHttpRequest === 'undefined') throw error;
+    return xhrSend(url, { ...init, blob });
+  }
+}
+
 export async function api(path, options = {}) {
   const session = await loadSession();
   const headers = { ...(options.headers || {}) };
@@ -48,7 +100,7 @@ export async function api(path, options = {}) {
   if (session?.token) headers.Authorization = `Bearer ${session.token}`;
   let response;
   try {
-    response = await fetch(`${apiBase()}${path}`, { ...options, headers });
+    response = await send(`${apiBase()}${path}`, { method: options.method, body: options.body, headers });
   } catch {
     throw new Error('Cannot reach the server. Start the API, then try again.');
   }
@@ -69,7 +121,7 @@ export async function apiBlob(path) {
   if (session?.token) headers.Authorization = `Bearer ${session.token}`;
   let response;
   try {
-    response = await fetch(`${apiBase()}${path}`, { headers });
+    response = await send(`${apiBase()}${path}`, { headers, blob: true });
   } catch {
     throw new Error('Cannot reach the server. Start the API, then try again.');
   }

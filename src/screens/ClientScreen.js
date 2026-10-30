@@ -181,6 +181,42 @@ export function ClientScreen({ onBack, docNo, readOnly }) {
     });
   }
 
+  function toJpegFile(file) {
+    return new Promise((resolve) => {
+      const url = URL.createObjectURL(file);
+      const image = new Image();
+      image.onload = () => {
+        const maxEdge = 2000;
+        const width = image.naturalWidth || image.width || 1;
+        const height = image.naturalHeight || image.height || 1;
+        const scale = Math.min(1, maxEdge / Math.max(width, height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(width * scale));
+        canvas.height = Math.max(1, Math.round(height * scale));
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          URL.revokeObjectURL(url);
+          resolve(file);
+          return;
+        }
+        ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob((blob) => {
+          URL.revokeObjectURL(url);
+          if (!blob) {
+            resolve(file);
+            return;
+          }
+          resolve(new File([blob], `photo-${Date.now()}.jpg`, { type: 'image/jpeg' }));
+        }, 'image/jpeg', 0.85);
+      };
+      image.onerror = () => {
+        URL.revokeObjectURL(url);
+        resolve(file);
+      };
+      image.src = url;
+    });
+  }
+
   async function addPhoto(source) {
     if (!form.docNo) {
       noteError('Save the job before adding photos');
@@ -190,8 +226,10 @@ export function ClientScreen({ onBack, docNo, readOnly }) {
       const data = new FormData();
       data.append('type', imageType);
       if (Platform.OS === 'web') {
-        const file = await chooseWebFile(source === 'camera');
-        if (!file) return;
+        const picked = await chooseWebFile(source === 'camera');
+        if (!picked) return;
+        const apple = typeof navigator !== 'undefined' && /iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+        const file = apple ? await toJpegFile(picked) : picked;
         const name = file.name && file.name !== 'image.jpg' ? file.name : `photo-${Date.now()}.jpg`;
         data.append('image', file, name);
       } else if (source === 'camera') {
