@@ -184,7 +184,7 @@ export function ClientScreen({ onBack, docNo, readOnly }) {
   function toJpegFile(file) {
     return new Promise((resolve) => {
       const url = URL.createObjectURL(file);
-      const image = new Image();
+      const image = document.createElement('img');
       image.onload = () => {
         const maxEdge = 2000;
         const width = image.naturalWidth || image.width || 1;
