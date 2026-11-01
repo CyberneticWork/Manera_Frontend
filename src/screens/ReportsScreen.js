@@ -99,10 +99,21 @@ export function ReportsScreen({ onBack }) {
               {report.title}
             </Heading>
             <Text style={{ color: colors.muted, marginBottom: 10 }}>{report.subtitle}</Text>
+            {pdfUrl && Platform.OS === 'web' ? createElement('iframe', {
+              src: pdfUrl,
+              title: report.title,
+              style: {
+                width: '100%',
+                height: phone ? '78vh' : '88vh',
+                minHeight: 640,
+                border: '1px solid #cfc6b8',
+                background: '#525659',
+              },
+            }) : null}
             {report.empty ? (
               <Text style={{ color: colors.text, fontSize: 16, lineHeight: 24 }}>{report.empty}</Text>
             ) : null}
-            {(report.sections || []).map((section) => (
+            {Platform.OS === 'web' ? null : (report.sections || []).map((section) => (
               <View key={section.heading} style={{ marginTop: 12 }}>
                 <Text style={{ color: colors.gold, fontWeight: '800', marginBottom: 6 }}>{section.heading}</Text>
                 {section.lines?.length ? (
@@ -120,14 +131,16 @@ export function ReportsScreen({ onBack }) {
                 ) : null}
                 {section.images?.length ? (
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 10 }}>
-                    {section.images.map((image, index) => (
-                      <View key={image.url} style={{ width: phone ? '50%' : '25%', padding: 4 }}>
+                    {section.images.map((image) => (
+                      <View key={image.url} style={{ width: '50%', padding: 4 }}>
+                        <Text style={{ color: colors.text, fontWeight: '700', textAlign: 'center', marginBottom: 4 }}>
+                          {String(image.type || 'Photo').toUpperCase()}
+                        </Text>
                         <Image
                           source={{ uri: fileUrl(image.url) }}
                           resizeMode="contain"
-                          style={{ width: '100%', height: phone ? 220 : 280, backgroundColor: '#fff', borderRadius: 4 }}
+                          style={{ width: '100%', height: 240, backgroundColor: '#fff', borderWidth: 1, borderColor: '#111' }}
                         />
-                        <Text style={{ color: colors.text, marginTop: 4 }}>{index + 1}. {image.type || 'Photo'}</Text>
                       </View>
                     ))}
                   </View>
