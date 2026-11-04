@@ -33,7 +33,7 @@ export function ClientScreen({ onBack, docNo, readOnly }) {
   const [items, setItems] = useState([]);
   const [draft, setDraft] = useState(emptyItem());
   const [images, setImages] = useState([]);
-  const [imageType, setImageType] = useState('Item');
+  const [imageType, setImageType] = useState('ID front');
   const [pending, setPending] = useState([]);
   const [lookups, setLookups] = useState({});
   const [error, setError] = useState('');
@@ -160,23 +160,24 @@ export function ClientScreen({ onBack, docNo, readOnly }) {
     screenRef.current?.scrollTo?.({ y: 0, animated: true });
   }
 
-  function chooseWebFile(capture) {
+  function chooseWebFiles(capture) {
     return new Promise((resolve) => {
       const input = document.createElement('input');
       input.type = 'file';
       input.accept = 'image/*';
       if (capture) input.setAttribute('capture', 'environment');
+      else input.multiple = true;
       input.style.position = 'fixed';
       input.style.opacity = '0';
       input.style.width = '1px';
       input.style.height = '1px';
       document.body.appendChild(input);
-      const finish = (file) => {
+      const finish = (files) => {
         input.remove();
-        resolve(file || null);
+        resolve(files);
       };
-      input.addEventListener('change', () => finish(input.files && input.files[0]));
-      input.addEventListener('cancel', () => finish(null));
+      input.addEventListener('change', () => finish(input.files ? Array.from(input.files) : []));
+      input.addEventListener('cancel', () => finish([]));
       input.click();
     });
   }
@@ -206,7 +207,8 @@ export function ClientScreen({ onBack, docNo, readOnly }) {
             resolve(null);
             return;
           }
-          resolve(new File([blob], `photo-${Date.now()}.jpg`, { type: 'image/jpeg' }));
+          const stamp = `${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+          resolve(new File([blob], `photo-${stamp}.jpg`, { type: 'image/jpeg' }));
         }, 'image/jpeg', 0.72);
       };
       image.onerror = () => {
@@ -223,32 +225,57 @@ export function ClientScreen({ onBack, docNo, readOnly }) {
       return;
     }
     try {
-      const data = new FormData();
-      data.append('type', imageType);
-      if (Platform.OS === 'web') {
-        const picked = await chooseWebFile(source === 'camera');
-        if (!picked) return;
-        const file = await toJpegFile(picked);
-        if (!file) {
-          noteError('This photo could not be prepared. Try Photo library.');
-          return;
-        }
-        const imageBase64 = await new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result);
-          reader.onerror = () => reject(new Error('Could not read the photo'));
-          reader.readAsDataURL(file);
+      const uploadAsset = async (asset, index) => {
+        const data = new FormData();
+        data.append('type', imageType);
+        data.append('image', {
+          uri: asset.uri,
+          name: asset.fileName || `photo-${Date.now()}-${index}.jpg`,
+          type: asset.mimeType || 'image/jpeg',
         });
+        await api(`/api/clients/${form.docNo}/images`, { method: 'POST', body: data });
+      };
+      if (Platform.OS === 'web') {
+        const picked = await chooseWebFiles(source === 'camera');
+        if (!picked.length) return;
         setUploading('photo');
         setError('');
-        await api(`/api/clients/${form.docNo}/images`, {
-          method: 'POST',
-          body: { type: imageType, name: file.name, contentType: 'image/jpeg', imageBase64 },
-        });
+        let saved = 0;
+        const failed = [];
+        for (let index = 0; index < picked.length; index += 1) {
+          setMessage(picked.length > 1 ? `Uploading ${index + 1} of ${picked.length}…` : 'Uploading photo…');
+          try {
+            const file = await toJpegFile(picked[index]);
+            if (!file) {
+              failed.push(picked[index].name || `photo ${index + 1}`);
+              continue;
+            }
+            const imageBase64 = await new Promise((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result);
+              reader.onerror = () => reject(new Error('Could not read the photo'));
+              reader.readAsDataURL(file);
+            });
+            await api(`/api/clients/${form.docNo}/images`, {
+              method: 'POST',
+              body: { type: imageType, name: file.name, contentType: 'image/jpeg', imageBase64 },
+            });
+            saved += 1;
+          } catch (err) {
+            failed.push(picked[index].name || err.message);
+          }
+        }
         await openJob(form.docNo);
-        setMessage('Photo saved in Firebase');
+        if (!saved) {
+          noteError(failed.length ? `Could not save the photos. ${failed[0]}` : 'This photo could not be prepared. Try Photo library.');
+          return;
+        }
+        setMessage(saved === 1 ? 'Photo saved in Firebase' : `${saved} photos saved in Firebase`);
+        if (failed.length) noteError(`Saved ${saved}. Could not save ${failed.length}.`);
         return;
-      } else if (source === 'camera') {
+      }
+      let assets = [];
+      if (source === 'camera') {
         const permission = await ImagePicker.requestCameraPermissionsAsync();
         if (!permission.granted) {
           noteError('Allow camera access to take a photo');
@@ -256,24 +283,30 @@ export function ClientScreen({ onBack, docNo, readOnly }) {
         }
         const picked = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.7 });
         if (picked.canceled) return;
-        const asset = picked.assets[0];
-        data.append('image', { uri: asset.uri, name: asset.fileName || `photo-${Date.now()}.jpg`, type: asset.mimeType || 'image/jpeg' });
+        assets = picked.assets || [];
       } else {
         const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (!permission.granted) {
           noteError('Allow photo library access to choose a picture');
           return;
         }
-        const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7 });
+        const picked = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ['images'],
+          quality: 0.7,
+          allowsMultipleSelection: true,
+        });
         if (picked.canceled) return;
-        const asset = picked.assets[0];
-        data.append('image', { uri: asset.uri, name: asset.fileName || 'photo.jpg', type: asset.mimeType || 'image/jpeg' });
+        assets = picked.assets || [];
       }
+      if (!assets.length) return;
       setUploading('photo');
       setError('');
-      await api(`/api/clients/${form.docNo}/images`, { method: 'POST', body: data });
+      for (let index = 0; index < assets.length; index += 1) {
+        setMessage(assets.length > 1 ? `Uploading ${index + 1} of ${assets.length}…` : 'Uploading photo…');
+        await uploadAsset(assets[index], index);
+      }
       await openJob(form.docNo);
-      setMessage('Photo saved in Firebase');
+      setMessage(assets.length === 1 ? 'Photo saved in Firebase' : `${assets.length} photos saved in Firebase`);
     } catch (e) {
       noteError(e.message);
     } finally {
@@ -392,7 +425,7 @@ export function ClientScreen({ onBack, docNo, readOnly }) {
         <Row>
           <PickerField label="Image type" value={imageType} options={opts('imageType')} onChange={setImageType} />
           {readOnly || !canAddPhoto ? null : <Button title={uploading === 'photo' ? 'Uploading…' : 'Camera'} onPress={() => addPhoto('camera')} disabled={Boolean(uploading)} />}
-          {readOnly || !canAddPhoto ? null : <Button title="Photo library" kind="ghost" onPress={() => addPhoto('library')} disabled={Boolean(uploading)} />}
+          {readOnly || !canAddPhoto ? null : <Button title="Select photos" kind="ghost" onPress={() => addPhoto('library')} disabled={Boolean(uploading)} />}
         </Row>
         <View style={styles.photos}>
           {images.map((image) => (
