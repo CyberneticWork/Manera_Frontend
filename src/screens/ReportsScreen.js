@@ -7,7 +7,7 @@ import { Banner, Button, Card, Field, Heading, Row, Screen, Table, Tabs, useLayo
 const types = [
   { key: 'bought', label: 'Bought products' },
   { key: 'bought-url', label: 'Bought products + photos' },
-  { key: 'summary', label: 'Product summary' },
+  { key: 'summary', label: 'Daily summary' },
   { key: 'main-cash', label: 'Main cash daily' },
   { key: 'petty-cash', label: 'Bank book' },
   { key: 'journal', label: 'Journal entries' },
