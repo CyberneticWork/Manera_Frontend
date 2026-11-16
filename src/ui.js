@@ -137,19 +137,24 @@ export function PickerField({ label, value, options, onChange, placeholder = 'Se
         <Pressable style={styles.modalBg} onPress={() => setOpen(false)}>
           <Pressable style={styles.modalCard} onPress={() => {}}>
             <Text style={styles.sectionTitle}>{label}</Text>
-            <ScrollView style={{ maxHeight: 360 }}>
-              {options.map((item) => (
-                <Pressable
-                  key={String(item.value)}
-                  style={styles.option}
-                  onPress={() => {
-                    onChange(item.value);
-                    setOpen(false);
-                  }}
-                >
-                  <Text style={styles.optionText}>{item.label}</Text>
-                </Pressable>
-              ))}
+            <ScrollView style={{ maxHeight: 420 }}>
+              {options.map((item, index) => {
+                const showGroup = item.group && item.group !== options[index - 1]?.group;
+                return (
+                  <View key={String(item.value)}>
+                    {showGroup ? <Text style={styles.optionGroup}>{item.group}</Text> : null}
+                    <Pressable
+                      style={[styles.option, item.group ? styles.optionNested : null]}
+                      onPress={() => {
+                        onChange(item.value);
+                        setOpen(false);
+                      }}
+                    >
+                      <Text style={styles.optionText}>{item.label}</Text>
+                    </Pressable>
+                  </View>
+                );
+              })}
               {!options.length ? <Text style={styles.sub}>Nothing to choose yet.</Text> : null}
             </ScrollView>
           </Pressable>
@@ -354,6 +359,15 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   option: { paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.line },
+  optionNested: { paddingLeft: 16 },
+  optionGroup: {
+    color: colors.gold,
+    fontSize: 13,
+    fontFamily: font.title,
+    fontWeight: '800',
+    marginTop: 10,
+    textTransform: 'uppercase',
+  },
   optionText: { color: colors.text, fontSize: 16, fontFamily: font.body },
   removeLink: { color: colors.coral, fontWeight: '800', fontFamily: font.body },
 });

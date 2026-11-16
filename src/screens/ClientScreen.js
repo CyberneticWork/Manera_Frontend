@@ -33,7 +33,7 @@ export function ClientScreen({ onBack, docNo, readOnly }) {
   const [items, setItems] = useState([]);
   const [draft, setDraft] = useState(emptyItem());
   const [images, setImages] = useState([]);
-  const [imageType, setImageType] = useState('ID front');
+  const [imageType, setImageType] = useState('ID Front');
   const [pending, setPending] = useState([]);
   const [lookups, setLookups] = useState({});
   const [error, setError] = useState('');
@@ -423,7 +423,16 @@ export function ClientScreen({ onBack, docNo, readOnly }) {
         <Heading>Photos</Heading>
         {!storageReady ? <Text style={styles.photoEmpty}>Firebase is not connected yet. A super admin must open Firebase and save the storage account before photos can be kept.</Text> : null}
         <Row>
-          <PickerField label="Image type" value={imageType} options={opts('imageType')} onChange={setImageType} />
+          <PickerField
+            label="Image type"
+            value={imageType}
+            options={(lookups.imageType || []).map((row) => ({
+              value: row.description,
+              label: row.description,
+              group: row.category || '',
+            }))}
+            onChange={setImageType}
+          />
           {readOnly || !canAddPhoto ? null : <Button title={uploading === 'photo' ? 'Uploading…' : 'Camera'} onPress={() => addPhoto('camera')} disabled={Boolean(uploading)} />}
           {readOnly || !canAddPhoto ? null : <Button title="Select photos" kind="ghost" onPress={() => addPhoto('library')} disabled={Boolean(uploading)} />}
         </Row>
